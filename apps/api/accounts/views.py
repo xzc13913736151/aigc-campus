@@ -5,7 +5,30 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 
-from .serializers import PairUpTokenObtainPairSerializer, RegisterSerializer, UserSerializer
+from .serializers import EmailCodeRequestSerializer, PairUpTokenObtainPairSerializer, RegisterSerializer, UserSerializer
+
+
+class EmailCodeRequestAPIView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    @extend_schema(
+        request=EmailCodeRequestSerializer,
+        responses={
+            202: inline_serializer(
+                name="EmailCodeRequestResponse",
+                fields={
+                    "detail": serializers.CharField(),
+                    "email": serializers.EmailField(),
+                    "expires_in": serializers.IntegerField(),
+                },
+            ),
+        },
+    )
+    def post(self, request):
+        serializer = EmailCodeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.save()
+        return Response(payload, status=status.HTTP_202_ACCEPTED)
 
 
 class RegisterAPIView(generics.CreateAPIView):

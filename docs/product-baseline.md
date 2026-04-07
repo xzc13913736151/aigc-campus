@@ -10,7 +10,7 @@ This note exists because the repository was initialized before the latest produc
 
 The current scaffold covers these baseline capabilities:
 
-- register, login, logout, current user
+- email verification code request, register, login, logout, current user
 - personal profile editing and profile page
 - module entry pages for dating, teammate matching, forum, and admin
 - teammate post creation, application flow, and admin visibility
@@ -20,7 +20,7 @@ The current scaffold covers these baseline capabilities:
 
 ## Deferred from the First Scaffold
 
-- campus verification by school email
+- campus verification by school email domain or school-specific enrollment rules
 - SMS login
 - production-grade recommendation ranking
 - full realtime chat implementation

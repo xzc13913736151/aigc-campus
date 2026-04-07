@@ -56,6 +56,14 @@ Install dependencies from the repository root:
 pnpm install
 ```
 
+Copy the environment template before starting the apps:
+
+```bash
+cp .env.example .env
+```
+
+The API auto-loads the repository root `.env` file during local development.
+
 Start the web app:
 
 ```bash
@@ -106,6 +114,13 @@ python manage.py migrate
 python manage.py createsuperuser
 python manage.py runserver
 ```
+
+Email verification codes:
+
+- The default local mail backend is `django.core.mail.backends.console.EmailBackend`.
+- When you request a verification code locally, the email content is printed in the API terminal.
+- To send real emails, set `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS`, and `DEFAULT_FROM_EMAIL`.
+- Registration now requires a verification code from `/api/v1/auth/email-code/request/`.
 
 Key API verification commands:
 

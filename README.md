@@ -51,7 +51,15 @@ The scaffold was last verified in this repository on `2026-03-22` with:
 pnpm install
 ```
 
-### 2. Start Infrastructure with Docker
+### 2. Copy Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+The API now auto-loads the repository root `.env` file for local development.
+
+### 3. Start Infrastructure with Docker
 
 The current `docker-compose.yml` only manages infrastructure services.
 The API and web applications still run as local processes.
@@ -61,7 +69,7 @@ docker compose up -d db redis
 docker compose ps
 ```
 
-### 3. Run the Web App
+### 4. Run the Web App
 
 ```bash
 pnpm --filter web dev
@@ -69,7 +77,7 @@ pnpm --filter web dev
 
 The web app will be available at `http://localhost:3000`.
 
-### 4. Run the API Locally
+### 5. Run the API Locally
 
 Before creating the virtual environment, make sure `python3 --version` reports `3.12` or newer.
 
@@ -114,7 +122,7 @@ pytest
 
 ## Current MVP Flow Covered by the Scaffold
 
-1. Register and log in with email and password.
+1. Request an email verification code, then register and log in with email and password.
 2. Edit the personal profile.
 3. Enter one of the three main modules.
 4. Create a teammate post as the first real end-to-end action.

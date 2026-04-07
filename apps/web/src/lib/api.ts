@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000/api/v1").replace(/\/+$/, "");
 
 const ACCESS_TOKEN_KEY = "pairup.access-token";
 const REFRESH_TOKEN_KEY = "pairup.refresh-token";
@@ -34,10 +34,39 @@ export function getAdminUrl() {
   return `${API_BASE_URL.replace(/\/api\/v1\/?$/, "")}/admin/`;
 }
 
+function getPayloadKeys(body: BodyInit | null | undefined): string[] | undefined {
+  if (!body) {
+    return undefined;
+  }
+
+  if (typeof body === "string") {
+    try {
+      const parsed = JSON.parse(body);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return Object.keys(parsed);
+      }
+    } catch {
+      return undefined;
+    }
+  }
+
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    return Array.from(body.keys());
+  }
+
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+    return Array.from(body.keys());
+  }
+
+  return undefined;
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const { auth = true, headers, ...rest } = options;
   const resolvedHeaders = new Headers(headers);
   resolvedHeaders.set("Content-Type", "application/json");
+  const url = `${API_BASE_URL}/${path.replace(/^\//, "")}`;
+  const payloadKeys = getPayloadKeys(rest.body);
 
   if (auth) {
     const accessToken = getAccessToken();
@@ -46,20 +75,67 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     }
   }
 
-  const response = await fetch(`${API_BASE_URL}/${path.replace(/^\//, "")}`, {
-    ...rest,
-    headers: resolvedHeaders,
+  console.debug("[apiFetch] dispatch", {
+    url,
+    method: rest.method ?? "GET",
+    auth,
+    payloadKeys,
   });
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...rest,
+      headers: resolvedHeaders,
+    });
+  } catch (error) {
+    console.error("[apiFetch] network error", {
+      url,
+      method: rest.method ?? "GET",
+      auth,
+      payloadKeys,
+      error,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    throw error;
+  }
 
   if (response.status === 204) {
     return undefined as T;
   }
 
-  const data = await response.json().catch(() => ({}));
+  const responseText = await response.text();
+  let data: unknown = {};
+  if (responseText) {
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      data = {};
+    }
+  }
+
   if (!response.ok) {
-    const detail = typeof data?.detail === "string" ? data.detail : "Request failed.";
+    console.error("[apiFetch] response error", {
+      url,
+      method: rest.method ?? "GET",
+      status: response.status,
+      statusText: response.statusText,
+      payloadKeys,
+      body: responseText,
+    });
+
+    const detail =
+      typeof (data as { detail?: unknown })?.detail === "string"
+        ? (data as { detail: string }).detail
+        : `Request failed with ${response.status} ${response.statusText}.`;
     throw new Error(detail);
   }
+
+  console.debug("[apiFetch] response ok", {
+    url,
+    method: rest.method ?? "GET",
+    status: response.status,
+  });
 
   return data as T;
 }

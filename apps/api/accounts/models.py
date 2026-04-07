@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from datetime import timedelta
+import secrets
+
 from django.contrib.auth.base_user import BaseUserManager
+from django.contrib.auth.hashers import check_password, make_password
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 
 from common.models import UUIDTimeStampedModel
 
@@ -47,6 +53,8 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimeStampedModel):
     full_name = models.CharField(max_length=120, blank=True)
     nickname = models.CharField(max_length=60, blank=True)
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.USER)
+    is_email_verified = models.BooleanField(default=False)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
 
@@ -60,3 +68,50 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimeStampedModel):
 
     def __str__(self) -> str:
         return self.email
+
+
+class EmailVerificationCode(UUIDTimeStampedModel):
+    class Purpose(models.TextChoices):
+        REGISTER = "register", "Register"
+
+    email = models.EmailField()
+    purpose = models.CharField(max_length=20, choices=Purpose.choices, default=Purpose.REGISTER)
+    code_hash = models.CharField(max_length=128)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["email", "purpose", "-created_at"]),
+        ]
+
+    @property
+    def is_expired(self) -> bool:
+        return self.expires_at <= timezone.now()
+
+    @property
+    def is_used(self) -> bool:
+        return self.used_at is not None
+
+    def set_code(self, raw_code: str) -> None:
+        self.code_hash = make_password(raw_code)
+
+    def check_code(self, raw_code: str) -> bool:
+        return check_password(raw_code, self.code_hash)
+
+    @classmethod
+    def issue(cls, email: str, purpose: str = Purpose.REGISTER) -> tuple["EmailVerificationCode", str]:
+        raw_code = f"{secrets.randbelow(1_000_000):06d}"
+        instance = cls(
+            email=email,
+            purpose=purpose,
+            expires_at=timezone.now() + timedelta(seconds=settings.EMAIL_VERIFICATION_CODE_TTL_SECONDS),
+        )
+        instance.set_code(raw_code)
+        instance.save()
+        return instance, raw_code
+
+    def mark_used(self) -> None:
+        self.used_at = timezone.now()
+        self.save(update_fields=["used_at", "updated_at"])
