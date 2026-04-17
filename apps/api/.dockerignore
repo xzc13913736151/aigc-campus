@@ -1,0 +1,12 @@
+.git
+.gitignore
+.pytest_cache/
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.log
+.coverage
+htmlcov/
+tests/
+pairup_api.egg-info/
