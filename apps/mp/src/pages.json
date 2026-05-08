@@ -1,0 +1,37 @@
+{
+  "pages": [
+    { "path": "pages/forum/index", "style": { "navigationBarTitleText": "CampusClaw", "enablePullDownRefresh": true } },
+    { "path": "pages/publish/index", "style": { "navigationBarTitleText": "发布" } },
+    { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息" } },
+    { "path": "pages/me/index", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/auth/login", "style": { "navigationBarTitleText": "登录" } },
+    { "path": "pages/auth/register", "style": { "navigationBarTitleText": "注册说明" } },
+    { "path": "pages/profile/index", "style": { "navigationBarTitleText": "个人资料" } },
+    { "path": "pages/blocks/index", "style": { "navigationBarTitleText": "黑名单" } },
+    { "path": "pages/teammates/index", "style": { "navigationBarTitleText": "组队匹配" } },
+    { "path": "pages/dating/index", "style": { "navigationBarTitleText": "恋爱匹配" } },
+    { "path": "pages/forum/detail", "style": { "navigationBarTitleText": "帖子详情" } },
+    { "path": "pages/forum/create", "style": { "navigationBarTitleText": "发布帖子" } },
+    { "path": "pages/chat/index", "style": { "navigationBarTitleText": "聊天" } },
+    { "path": "pages/admin/index", "style": { "navigationBarTitleText": "内容审核" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "CampusClaw",
+    "navigationBarBackgroundColor": "#f7f1e8",
+    "backgroundColor": "#f7f1e8"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#7a7f87",
+    "selectedColor": "#f16b4f",
+    "backgroundColor": "#fffaf5",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/forum/index", "text": "论坛" },
+      { "pagePath": "pages/publish/index", "text": "发布" },
+      { "pagePath": "pages/messages/index", "text": "消息" },
+      { "pagePath": "pages/me/index", "text": "我的" }
+    ]
+  }
+}

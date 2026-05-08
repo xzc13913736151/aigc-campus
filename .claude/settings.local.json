@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(conda run *)",
+      "Bash(NPM_CONFIG_CACHE=\"c:/Users/Lenovo/.npm-cache\" conda run -n aigc npm install -g pnpm)",
+      "Bash(NPM_CONFIG_CACHE=\"c:/Users/Lenovo/.npm-cache\" NPM_CONFIG_PREFIX=\"c:/Users/Lenovo/.npm-global\" conda run -n aigc npm install -g pnpm)"
+    ]
+  }
+}

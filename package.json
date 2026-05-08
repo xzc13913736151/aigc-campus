@@ -1,0 +1,9 @@
+{
+  "name": "pairup",
+  "private": true,
+  "packageManager": "pnpm@10.26.1",
+  "scripts": {
+    "dev:mp": "pnpm --dir apps/mp dev:mp-weixin",
+    "build:mp": "pnpm --dir apps/mp build:mp-weixin"
+  }
+}
