@@ -22,6 +22,10 @@
           <text class="entry-desc">完善资料、浏览候选人、建立新连接</text>
         </view>
       </view>
+
+      <view v-if="!hasToken" class="login-cta">
+        <button class="btn btn-primary" @tap="goLogin">微信一键登录</button>
+      </view>
     </view>
 
     <view class="card section forum-filter-card">
@@ -251,6 +255,7 @@ import {
   currentUser,
   ensureAuthenticated,
   isAuthenticated,
+  redirectToLogin,
 } from "../../utils/auth";
 import { navigateTo } from "../../utils/navigation";
 import { showToast } from "../../utils/ui";
@@ -396,6 +401,10 @@ function goTeammates() {
 function goDating() {
   navigateTo("/pages/dating/index");
 }
+
+function goLogin() {
+  redirectToLogin("/pages/forum/index");
+}
 </script>
 
 <style scoped lang="scss">
@@ -411,6 +420,10 @@ function goDating() {
 
 .entry-card {
   padding: 28rpx;
+}
+
+.login-cta {
+  margin-top: 24rpx;
 }
 
 .accent-team {

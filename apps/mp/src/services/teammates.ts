@@ -22,6 +22,22 @@ export function createTeammatePost(payload: {
   })
 }
 
+export function updateTeammatePost(
+  postId: string,
+  payload: Partial<Pick<TeamPost, 'title' | 'summary' | 'details' | 'target_size' | 'tags' | 'required_skills' | 'status'>>,
+) {
+  return request<TeamPost>(`teammates/posts/${postId}/`, {
+    method: 'PATCH',
+    data: payload,
+  })
+}
+
+export function deleteTeammatePost(postId: string) {
+  return request<void>(`teammates/posts/${postId}/`, {
+    method: 'DELETE',
+  })
+}
+
 export function fetchMyTeammatePosts() {
   return request<TeamPost[]>('teammates/posts/mine/')
 }

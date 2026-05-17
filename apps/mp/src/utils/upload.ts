@@ -7,6 +7,7 @@ export async function uploadFile<T>(path: string, filePath: string, formName = '
     url: `${BASE_URL}/${path.replace(/^\//, '')}`,
     filePath,
     name: formName,
+    timeout: 15000,
     header: token ? { Authorization: `Bearer ${token}` } : {},
   })
 

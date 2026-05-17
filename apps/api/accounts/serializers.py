@@ -155,8 +155,36 @@ class WechatLoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("WeChat login code is required.")
         return value
 
+    def _build_login_payload(self, openid: str, nickname: str):
+        with transaction.atomic():
+            user = User.objects.filter(wechat_openid=openid).first()
+            if user is None:
+                digest = hashlib.sha256(openid.encode("utf-8")).hexdigest()[:24]
+                email = f"wx_{digest}@wechat.pairup.local"
+                user = User.objects.create_user(
+                    email=email,
+                    password=None,
+                    nickname=nickname,
+                    full_name="",
+                    wechat_openid=openid,
+                    is_email_verified=False,
+                )
+
+        refresh = RefreshToken.for_user(user)
+        refresh["role"] = user.role
+        return {
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "user": UserSerializer(user).data,
+        }
+
+    def _create_demo_login(self):
+        return self._build_login_payload("demo-wechat-local", "CampusClaw Demo")
+
     def create(self, validated_data):
         if not settings.WECHAT_MINIAPP_APPID or not settings.WECHAT_MINIAPP_SECRET:
+            if settings.DEBUG:
+                return self._create_demo_login()
             self.fail("wechat_unconfigured")
 
         response = requests.get(
@@ -179,25 +207,4 @@ class WechatLoginSerializer(serializers.Serializer):
         if not isinstance(openid, str) or not openid:
             self.fail("wechat_openid_missing")
 
-        with transaction.atomic():
-            user = User.objects.filter(wechat_openid=openid).first()
-            if user is None:
-                digest = hashlib.sha256(openid.encode("utf-8")).hexdigest()[:24]
-                email = f"wx_{digest}@wechat.pairup.local"
-                nickname = f"微信用户{openid[-6:]}"
-                user = User.objects.create_user(
-                    email=email,
-                    password=None,
-                    nickname=nickname,
-                    full_name="",
-                    wechat_openid=openid,
-                    is_email_verified=False,
-                )
-
-        refresh = RefreshToken.for_user(user)
-        refresh["role"] = user.role
-        return {
-            "access": str(refresh.access_token),
-            "refresh": str(refresh),
-            "user": UserSerializer(user).data,
-        }
+        return self._build_login_payload(openid, f"微信用户{openid[-6:]}")

@@ -67,6 +67,15 @@
 
     <view v-else-if="activeMode === 'forum'" class="card section">
       <view class="form">
+        <view class="field compact-action">
+          <view>
+            <text class="label">完整发帖编辑器</text>
+            <view style="height: 8rpx" />
+            <text class="helper">支持发帖前选择图片、发布后自动上传、编辑和进入详情页。</text>
+          </view>
+          <button class="btn btn-ghost" size="mini" @tap="goForumCreate">打开</button>
+        </view>
+
         <view class="field">
           <text class="label">帖子标题</text>
           <input v-model="forumForm.title" class="input" type="text" placeholder="一句话说清你想讨论什么" />
@@ -543,6 +552,10 @@ function goProfile() {
   navigateTo('/pages/profile/index')
 }
 
+function goForumCreate() {
+  navigateTo('/pages/forum/create')
+}
+
 function goDating() {
   navigateTo('/pages/dating/index')
 }
@@ -622,6 +635,21 @@ function goDating() {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
+}
+
+.compact-action {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 20rpx;
+  border-radius: 24rpx;
+  background: rgba(241, 107, 79, 0.08);
+}
+
+.compact-action > view {
+  flex: 1;
+  min-width: 0;
 }
 
 .tips-card {

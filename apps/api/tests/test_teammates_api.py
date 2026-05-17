@@ -6,6 +6,16 @@ from teammates.models import TeamApplication, TeamPost
 
 
 @pytest.mark.django_db
+def test_team_post_list_allows_empty_public_result():
+    client = APIClient()
+
+    response = client.get("/api/v1/teammates/posts/")
+
+    assert response.status_code == 200
+    assert response.data == []
+
+
+@pytest.mark.django_db
 def test_team_post_creation_application_and_acceptance(user_factory):
     author = user_factory(email="author@example.com", password="securepass123")
     applicant = user_factory(email="applicant@example.com", password="securepass123")

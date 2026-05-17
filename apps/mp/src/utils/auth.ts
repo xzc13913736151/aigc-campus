@@ -37,7 +37,8 @@ const TAB_PAGES = new Set([
 export const currentUser = ref<UserSummary | null>(getCurrentUser())
 export const authReady = ref(false)
 export const profileOnboarded = ref(getProfileOnboarded())
-export const isAuthenticated = computed(() => Boolean(getAccessToken()))
+export const accessToken = ref<string | null>(getAccessToken())
+export const isAuthenticated = computed(() => Boolean(accessToken.value))
 
 let bootstrapPromise: Promise<void> | null = null
 let refreshPromise: Promise<string | null> | null = null
@@ -160,11 +161,13 @@ export async function syncProfileOnboardingStatus() {
 
 export function applyLoginResult(payload: LoginResponse) {
   saveAuthTokens(payload.access, payload.refresh)
+  accessToken.value = payload.access
   persistCurrentUser(payload.user ?? null)
 }
 
 export function clearAuthSession() {
   clearAuthTokens()
+  accessToken.value = null
   clearCurrentUser()
   clearLoginRedirect()
   clearProfileOnboarded()
@@ -189,6 +192,7 @@ export async function refreshAccessToken() {
   })
     .then((payload) => {
       saveAccessToken(payload.access)
+      accessToken.value = payload.access
       if (payload.refresh) {
         saveAuthTokens(payload.access, payload.refresh)
       }
@@ -228,17 +232,19 @@ export async function bootstrapAuth() {
   }
 
   bootstrapPromise = (async () => {
-    const accessToken = getAccessToken()
+    const storedAccessToken = getAccessToken()
     const refreshToken = getRefreshToken()
 
-    if (!accessToken && !refreshToken) {
+    if (!storedAccessToken && !refreshToken) {
       clearAuthSession()
       authReady.value = true
       return
     }
 
-    if (!accessToken && refreshToken) {
+    if (!storedAccessToken && refreshToken) {
       await refreshAccessToken()
+    } else {
+      accessToken.value = storedAccessToken
     }
 
     let user = await loadCurrentUser()

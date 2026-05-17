@@ -1,7 +1,8 @@
 from django.db.models import Q
+from django.db import IntegrityError
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from notifications.models import Notification
 from notifications.services import create_notification
@@ -25,7 +26,7 @@ class TeamPostListCreateAPIView(generics.ListCreateAPIView):
         return [permissions.AllowAny()]
 
     def get_queryset(self):
-        queryset = self.queryset
+        queryset = self.queryset.all()
         query = self.request.query_params.get("q")
         tag = self.request.query_params.get("tag")
         status_filter = self.request.query_params.get("status")
@@ -42,9 +43,19 @@ class TeamPostListCreateAPIView(generics.ListCreateAPIView):
         serializer.save(author=self.request.user)
 
 
-class TeamPostDetailAPIView(generics.RetrieveAPIView):
+class IsTeamPostAuthor(permissions.BasePermission):
+    def has_object_permission(self, request, view, obj):
+        return obj.author_id == request.user.id
+
+
+class TeamPostDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = TeamPostSerializer
     queryset = TeamPost.objects.select_related("author")
+
+    def get_permissions(self):
+        if self.request.method in permissions.SAFE_METHODS:
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated(), IsTeamPostAuthor()]
 
 
 class MyTeamPostsAPIView(generics.ListAPIView):
@@ -63,7 +74,12 @@ class TeamApplicationCreateAPIView(generics.CreateAPIView):
         post = get_object_or_404(TeamPost, pk=self.kwargs["post_id"])
         if post.author_id == self.request.user.id:
             raise PermissionDenied("You cannot apply to your own post.")
-        serializer.instance = TeamApplication.objects.create(post=post, applicant=self.request.user, **serializer.validated_data)
+        if post.status != TeamPost.Status.OPEN or post.current_size >= post.target_size:
+            raise PermissionDenied("This team post is not accepting applications.")
+        try:
+            serializer.instance = TeamApplication.objects.create(post=post, applicant=self.request.user, **serializer.validated_data)
+        except IntegrityError as exc:
+            raise ValidationError({"detail": "You have already applied to this team post."}) from exc
         create_notification(
             recipient=post.author,
             actor=self.request.user,
@@ -101,6 +117,8 @@ class TeamApplicationReviewAPIView(generics.UpdateAPIView):
         application = self.get_object()
         if application.post.author_id != self.request.user.id:
             raise PermissionDenied("You can only manage applications for your own post.")
+        if application.status != TeamApplication.Status.PENDING:
+            raise PermissionDenied("This application has already been reviewed.")
 
         updated_application = serializer.save()
         post = updated_application.post

@@ -9,4 +9,5 @@ drf-spectacular>=0.28,<0.29
 gunicorn>=23.0,<24
 psycopg[binary]>=3.2,<3.3
 Pillow>=11,<12
+requests>=2.32,<3
 whitenoise>=6.8,<7

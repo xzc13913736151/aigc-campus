@@ -28,6 +28,24 @@ class TeamPostSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("id", "author", "current_size", "is_highlighted", "bump_score", "bumped_at", "created_at", "updated_at")
 
+    def validate_target_size(self, value):
+        if value < 2 or value > 20:
+            raise serializers.ValidationError("Target size must be between 2 and 20.")
+        return value
+
+    def validate_status(self, value):
+        if value not in {TeamPost.Status.OPEN, TeamPost.Status.FILLED, TeamPost.Status.CLOSED}:
+            raise serializers.ValidationError("Invalid team post status.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        target_size = attrs.get("target_size", getattr(self.instance, "target_size", 3))
+        current_size = getattr(self.instance, "current_size", 1)
+        if target_size < current_size:
+            raise serializers.ValidationError({"target_size": "Target size cannot be smaller than current team size."})
+        return attrs
+
 
 class TeamApplicationSerializer(serializers.ModelSerializer):
     applicant = UserSerializer(read_only=True)
@@ -44,6 +62,9 @@ class TeamApplicationCreateSerializer(serializers.ModelSerializer):
         model = TeamApplication
         fields = ("id", "message")
         read_only_fields = ("id",)
+
+    def validate_message(self, value):
+        return value.strip()
 
 
 class TeamApplicationReviewSerializer(serializers.ModelSerializer):

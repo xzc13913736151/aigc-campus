@@ -16,16 +16,25 @@ async function sendRequest(
   token: string | null,
   headers: Record<string, string>,
 ) {
-  return uni.request({
-    url,
-    method: method as UniApp.RequestOptions['method'],
-    data,
-    header: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...headers,
-    },
-  })
+  try {
+    return await uni.request({
+      url,
+      method: method as UniApp.RequestOptions['method'],
+      data,
+      timeout: 15000,
+      header: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...headers,
+      },
+    })
+  } catch (error) {
+    const message =
+      typeof (error as { errMsg?: unknown })?.errMsg === 'string'
+        ? (error as { errMsg: string }).errMsg
+        : '请求后端失败，请确认本地服务已启动'
+    throw new Error(message)
+  }
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {

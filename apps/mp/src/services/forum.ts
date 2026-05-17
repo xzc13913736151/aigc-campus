@@ -67,7 +67,11 @@ function filterMockForumPosts(query: string, category: string) {
 }
 
 export async function fetchForumPosts(query = '', category = '') {
-  return filterMockForumPosts(query, category)
+  try {
+    return await request<ForumPost[]>(`forum/posts/${buildQuery({ q: query, category })}`, { auth: false })
+  } catch {
+    return filterMockForumPosts(query, category)
+  }
 }
 
 export async function fetchForumPostDetail(postId: string) {

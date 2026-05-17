@@ -68,8 +68,12 @@
       <view class="action-row">
         <button v-if="!hasToken" class="btn btn-primary" @tap="goLogin">去登录</button>
         <button v-else-if="!profileComplete" class="btn btn-primary" @tap="goProfile">完善资料</button>
-        <button v-else class="btn btn-primary" @tap="scrollToComposer">发起组队</button>
-        <button class="btn btn-ghost" @tap="focusMyPosts">看我的招募</button>
+        <view v-else class="btn btn-primary action-button" @tap="openComposer">
+          <text class="action-button-text primary-button-text">发起组队</text>
+        </view>
+        <view class="btn btn-ghost action-button" @tap="focusMyPosts">
+          <text class="action-button-text ghost-button-text">看我的招募</text>
+        </view>
       </view>
 
       <view v-if="pageError" style="height: 14rpx" />
@@ -100,6 +104,16 @@
           <view v-if="post.required_skills.length" style="height: 14rpx" />
           <view v-if="post.required_skills.length" class="tag-row">
             <text v-for="skill in post.required_skills" :key="skill" class="skill-tag">{{ skill }}</text>
+          </view>
+          <view style="height: 18rpx" />
+          <view class="action-row">
+            <button class="btn btn-secondary" size="mini" @tap="editPost(post)">编辑</button>
+            <button class="btn btn-ghost" size="mini" :disabled="closingPostId === post.id" @tap="togglePostStatus(post)">
+              {{ closingPostId === post.id ? '处理中...' : post.status === 'closed' ? '重新开放' : '关闭招募' }}
+            </button>
+            <button class="btn btn-ghost" size="mini" :disabled="deletingPostId === post.id" @tap="handleDeletePost(post.id)">
+              {{ deletingPostId === post.id ? '删除中...' : '删除' }}
+            </button>
           </view>
         </view>
       </view>
@@ -209,73 +223,36 @@
       </view>
     </view>
 
-    <view id="composer" class="card">
-      <text class="section-title">发起一条组队招募</text>
-      <view style="height: 8rpx" />
-      <text class="section-desc">适合发布项目组队、比赛招募、学习搭子或活动合作。写得越清楚，越容易遇到合适的人。</text>
-      <view style="height: 24rpx" />
-
-      <view v-if="!hasToken" class="empty">
-        <text class="section-desc">发布组队前需要先完成微信登录。</text>
-        <view style="height: 24rpx" />
-        <button class="btn btn-primary" @tap="goLogin">去登录</button>
-      </view>
-
-      <view v-else-if="!profileComplete" class="empty">
-        <text class="section-desc">请先补全个人资料，方便别人判断你是谁、适合做什么，以及怎么联系你。</text>
-        <view style="height: 24rpx" />
-        <button class="btn btn-primary" @tap="goProfile">完善资料</button>
-      </view>
-
-      <view v-else class="form">
-        <view class="field">
-          <text class="label">招募标题</text>
-          <input v-model="form.title" class="input" type="text" placeholder="例如：找 2 位同学一起做 AI 校园工具项目" />
-        </view>
-        <view class="field">
-          <text class="label">一句话概述</text>
-          <input v-model="form.summary" class="input" type="text" placeholder="说明项目方向、节奏，以及你最想找什么样的人" />
-        </view>
-        <view class="field">
-          <text class="label">详细说明</text>
-          <textarea v-model="form.details" class="textarea" placeholder="写清背景、目标、分工、时间安排和合作预期" />
-        </view>
-        <view class="field">
-          <text class="label">目标人数</text>
-          <input v-model="form.target_size" class="input" type="number" placeholder="2 - 20" />
-        </view>
-        <view class="field">
-          <text class="label">项目标签</text>
-          <input v-model="form.tagsText" class="input" type="text" placeholder="AI, 产品, 比赛, 校园活动" />
-          <text class="helper">多个标签请用英文逗号分隔。</text>
-        </view>
-        <view class="field">
-          <text class="label">需要的技能</text>
-          <input v-model="form.skillsText" class="input" type="text" placeholder="前端, 后端, 设计, 文案" />
-          <text class="helper">多个技能请用英文逗号分隔。</text>
-        </view>
-        <text v-if="composerError" class="error">{{ composerError }}</text>
-        <button class="btn btn-primary" :disabled="submitting" @tap="handleSubmit">
-          {{ submitting ? '发布中...' : '发布组队' }}
-        </button>
-      </view>
+    <view v-if="composerVisible" id="composer-anchor" class="section">
+      <TeamComposer
+        :has-token="hasToken"
+        :profile-complete="profileComplete"
+        :editing-post="editingPost"
+        @login="goLogin"
+        @profile="goProfile"
+        @saved="handleComposerSaved"
+        @cancel="cancelEdit"
+      />
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 
+import TeamComposer from '../../components/teammates/TeamComposer.vue'
 import type { TeamApplication, TeamPost } from '../../types/api'
 import { currentUser, ensureAuthenticated, isAuthenticated, profileOnboarded, redirectToLogin } from '../../utils/auth'
 import {
   applyToTeammatePost,
-  createTeammatePost,
+  deleteTeammatePost,
+  fetchMyTeammatePosts,
   fetchMyTeammateApplications,
   fetchReceivedTeammateApplications,
   fetchTeammatePosts,
   reviewTeammateApplication,
+  updateTeammatePost,
 } from '../../services/teammates'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
@@ -284,33 +261,19 @@ const hasToken = ref(isAuthenticated.value)
 const profileComplete = computed(() => profileOnboarded.value)
 const query = ref('')
 const loadingList = ref(false)
-const submitting = ref(false)
 const applyingPostId = ref('')
 const reviewingId = ref('')
+const closingPostId = ref('')
+const deletingPostId = ref('')
 const pageError = ref('')
-const composerError = ref('')
 const posts = ref<TeamPost[]>([])
+const myPosts = ref<TeamPost[]>([])
 const myApplications = ref<TeamApplication[]>([])
 const receivedApplications = ref<TeamApplication[]>([])
-
-const form = reactive({
-  title: '',
-  summary: '',
-  details: '',
-  target_size: '3',
-  tagsText: '',
-  skillsText: '',
-})
+const editingPost = ref<TeamPost | null>(null)
+const composerVisible = ref(false)
 
 const applyMessages = reactive<Record<string, string>>({})
-
-const myPosts = computed(() => {
-  const email = currentUser.value?.email ?? ''
-  if (!email) {
-    return []
-  }
-  return posts.value.filter((post) => post.author.email === email)
-})
 
 const pendingReceivedCount = computed(() => receivedApplications.value.filter((application) => application.status === 'pending').length)
 
@@ -330,13 +293,16 @@ async function refreshAll() {
   try {
     posts.value = await fetchTeammatePosts(query.value)
     if (hasToken.value) {
-      const [mine, received] = await Promise.all([
+      const [ownPosts, mine, received] = await Promise.all([
+        fetchMyTeammatePosts(),
         fetchMyTeammateApplications(),
         fetchReceivedTeammateApplications(),
       ])
+      myPosts.value = ownPosts
       myApplications.value = mine
       receivedApplications.value = received
     } else {
+      myPosts.value = []
       myApplications.value = []
       receivedApplications.value = []
     }
@@ -400,14 +366,29 @@ function canApply(post: TeamPost) {
   if (post.status !== 'open') {
     return false
   }
+  if (getOpenSeats(post) <= 0) {
+    return false
+  }
   return !myApplications.value.some((application) => application.post.id === post.id)
 }
 
-function scrollToComposer() {
+async function scrollToComposer() {
+  await nextTick()
   uni.pageScrollTo({
-    selector: '#composer',
+    selector: '#composer-anchor',
     duration: 280,
+    fail: () => {
+      uni.pageScrollTo({ scrollTop: 1200, duration: 280 })
+    },
   })
+}
+
+function openComposer() {
+  if (!ensureAuthenticated('/pages/teammates/index')) {
+    return
+  }
+  composerVisible.value = true
+  void scrollToComposer()
 }
 
 function focusMyPosts() {
@@ -450,61 +431,51 @@ async function handleReview(applicationId: string, status: 'accepted' | 'rejecte
   }
 }
 
-async function handleSubmit() {
-  composerError.value = ''
+function editPost(post: TeamPost) {
+  editingPost.value = post
+  composerVisible.value = true
+  void scrollToComposer()
+}
 
-  const targetSize = Number(form.target_size)
-  if (form.title.trim().length < 4) {
-    composerError.value = '标题至少需要 4 个字'
-    return
-  }
-  if (form.summary.trim().length < 8) {
-    composerError.value = '一句话概述至少需要 8 个字'
-    return
-  }
-  if (form.details.trim().length < 20) {
-    composerError.value = '详细说明至少需要 20 个字'
-    return
-  }
-  if (!Number.isInteger(targetSize) || targetSize < 2 || targetSize > 20) {
-    composerError.value = '目标人数需要在 2 到 20 之间'
-    return
-  }
-  if (!ensureAuthenticated('/pages/teammates/index')) {
-    return
-  }
+function cancelEdit() {
+  editingPost.value = null
+  composerVisible.value = false
+}
 
-  submitting.value = true
+async function handleComposerSaved() {
+  editingPost.value = null
+  composerVisible.value = false
+  await refreshAll()
+  uni.pageScrollTo({ scrollTop: 0, duration: 200 })
+}
+
+async function togglePostStatus(post: TeamPost) {
+  closingPostId.value = post.id
   try {
-    await createTeammatePost({
-      title: form.title.trim(),
-      summary: form.summary.trim(),
-      details: form.details.trim(),
-      target_size: targetSize,
-      tags: form.tagsText
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      required_skills: form.skillsText
-        .split(',')
-        .map((skill) => skill.trim())
-        .filter(Boolean),
-    })
-
-    form.title = ''
-    form.summary = ''
-    form.details = ''
-    form.target_size = '3'
-    form.tagsText = ''
-    form.skillsText = ''
-
-    showToast('组队发布成功', 'success')
+    await updateTeammatePost(post.id, { status: post.status === 'closed' ? 'open' : 'closed' })
+    showToast(post.status === 'closed' ? '招募已重新开放' : '招募已关闭', 'success')
     await refreshAll()
-    uni.pageScrollTo({ scrollTop: 0, duration: 200 })
   } catch (error) {
-    composerError.value = error instanceof Error ? error.message : '发布组队失败'
+    showToast(error instanceof Error ? error.message : '更新招募状态失败')
   } finally {
-    submitting.value = false
+    closingPostId.value = ''
+  }
+}
+
+async function handleDeletePost(postId: string) {
+  deletingPostId.value = postId
+  try {
+    await deleteTeammatePost(postId)
+    if (editingPost.value?.id === postId) {
+      editingPost.value = null
+      composerVisible.value = false
+    }
+    showToast('招募已删除', 'success')
+    await refreshAll()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '删除招募失败')
+  } finally {
+    deletingPostId.value = ''
   }
 }
 

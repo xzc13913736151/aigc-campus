@@ -29,7 +29,7 @@
         <button class="btn btn-primary" :disabled="submitting" @tap="handleLogin">
           {{ submitting ? '登录中...' : '使用微信一键登录' }}
         </button>
-        <text class="helper">如果登录失败，通常是微信登录 code 获取异常，稍后重试即可。</text>
+        <text class="helper">本地 demo 会自动使用开发登录；配置微信 AppID 和 Secret 后会切换为真实微信登录。</text>
       </view>
     </view>
   </view>
