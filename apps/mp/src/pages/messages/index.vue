@@ -1,23 +1,9 @@
 <template>
   <view class="container">
-    <view class="section">
-      <text class="eyebrow">CampusClaw Chat</text>
+    <view class="section hero">
+      <text class="eyebrow">CampusClaw 消息</text>
       <view style="height: 18rpx" />
-      <text class="title">聊天放前面，通知放后面，先把真正需要回复的人找到。</text>
-      <view style="height: 18rpx" />
-      <text class="subtitle">
-        这里优先展示你的聊天会话，方便你快速继续沟通。帖子互动和系统提醒会收进下方通知区。
-      </text>
-      <view style="height: 26rpx" />
-
-      <view class="status-row">
-        <view class="status-chip" :class="{ active: hasToken }">
-          <text>{{ hasToken ? '已登录' : '未登录' }}</text>
-        </view>
-        <view class="status-chip" :class="{ complete: profileComplete }">
-          <text>{{ hasToken ? `未读通知 ${unreadCount}` : '登录后查看聊天与通知' }}</text>
-        </view>
-      </view>
+      <text class="title">聊天、通知和新的连接，都在这里汇合。</text>
     </view>
 
     <view v-if="!hasToken" class="card empty">
@@ -54,13 +40,66 @@
       <view class="card section">
         <view class="section-head">
           <view>
+            <text class="section-title">搜索联系人</text>
+            <view style="height: 8rpx" />
+            <text class="section-desc">输入 CampusClaw ID 或昵称，找到同学后可以直接发起聊天。</text>
+          </view>
+        </view>
+        <view style="height: 20rpx" />
+
+        <view class="contact-search-row">
+          <input
+            v-model="contactKeyword"
+            class="input contact-search-input"
+            type="text"
+            placeholder="例如 CC8K3P2A 或昵称"
+            confirm-type="search"
+            @confirm="handleContactSearch"
+          />
+          <button class="btn btn-primary contact-search-button" :disabled="searchingContacts" @tap="handleContactSearch">
+            {{ searchingContacts ? '搜索中...' : '搜索' }}
+          </button>
+        </view>
+
+        <view v-if="contactResults.length" style="height: 20rpx" />
+        <view v-if="contactResults.length" class="contact-result-list">
+          <view v-for="contact in contactResults" :key="contact.id" class="contact-card">
+            <view class="contact-main">
+              <image v-if="contact.avatar_url" class="contact-avatar" :src="contact.avatar_url" mode="aspectFill" />
+              <view v-else class="contact-avatar fallback">
+                <text>{{ getContactInitial(contact) }}</text>
+              </view>
+              <view class="contact-copy">
+                <text class="section-title contact-name">{{ getContactName(contact) }}</text>
+                <view style="height: 6rpx" />
+                <text class="helper">CampusClaw ID：{{ contact.claw_id }}</text>
+                <view v-if="contact.headline" style="height: 6rpx" />
+                <text v-if="contact.headline" class="section-desc">{{ contact.headline }}</text>
+              </view>
+            </view>
+            <button
+              class="btn btn-secondary"
+              size="mini"
+              :disabled="startingContactId === contact.id"
+              @tap="startContactChat(contact)"
+            >
+              {{ startingContactId === contact.id ? '处理中...' : '联系TA' }}
+            </button>
+          </view>
+        </view>
+
+        <view v-else-if="contactSearchDone" class="empty small-empty">
+          <text class="section-desc">没有找到匹配联系人，可以确认一下 CampusClaw ID 是否输入完整。</text>
+        </view>
+      </view>
+
+      <view class="card section">
+        <view class="section-head">
+          <view>
             <text class="section-title">聊天会话</text>
             <view style="height: 8rpx" />
             <text class="section-desc">优先显示最近活跃的聊天，支持在线状态、输入状态和隐藏会话。</text>
           </view>
-          <button class="btn btn-ghost" size="mini" :disabled="loadingThreads" @tap="loadThreads">
-            {{ loadingThreads ? '刷新中...' : '刷新会话' }}
-          </button>
         </view>
         <view style="height: 20rpx" />
 
@@ -114,9 +153,6 @@
             <text class="section-desc">帖子互动、聊天提醒和系统消息都会集中在这里，避免打断你主线聊天。</text>
           </view>
           <view class="action-row">
-            <button class="btn btn-ghost" size="mini" :disabled="loadingNotifications" @tap="loadNotifications">
-              {{ loadingNotifications ? '刷新中...' : '刷新通知' }}
-            </button>
             <button class="btn btn-primary" size="mini" :disabled="!notifications.length || unreadCount === 0" @tap="handleMarkAllRead">
               全部已读
             </button>
@@ -164,11 +200,12 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { onHide, onShow, onUnload } from '@dcloudio/uni-app'
+import { onHide, onPullDownRefresh, onReachBottom, onShow, onUnload } from '@dcloudio/uni-app'
 
 import BottomTabBar from '../../components/BottomTabBar.vue'
-import type { ChatThread, NotificationItem } from '../../types/api'
-import { fetchChatThreads, hideChatThread } from '../../services/chat'
+import type { ChatThread, ContactSearchUser, NotificationItem } from '../../types/api'
+import { createChatThread, fetchChatThreads, hideChatThread } from '../../services/chat'
+import { searchContacts } from '../../services/auth'
 import {
   fetchNotificationUnreadCount,
   fetchNotifications,
@@ -194,6 +231,11 @@ const loadingNotifications = ref(false)
 const loadingThreads = ref(false)
 const hidingThreadId = ref('')
 const markingId = ref('')
+const contactKeyword = ref('')
+const contactResults = ref<ContactSearchUser[]>([])
+const searchingContacts = ref(false)
+const contactSearchDone = ref(false)
+const startingContactId = ref('')
 const threadPresence = ref<Record<string, boolean>>({})
 const threadTyping = ref<Record<string, boolean>>({})
 let notificationSocket: UniApp.SocketTask | null = null
@@ -223,6 +265,15 @@ onUnload(() => {
   teardownSockets()
 })
 
+onPullDownRefresh(async () => {
+  await loadAll()
+  uni.stopPullDownRefresh()
+})
+
+onReachBottom(() => {
+  void loadAll()
+})
+
 async function loadAll() {
   await Promise.all([loadNotifications(), loadThreads()])
 }
@@ -248,6 +299,42 @@ async function loadThreads() {
     showToast(error instanceof Error ? error.message : '加载会话失败')
   } finally {
     loadingThreads.value = false
+  }
+}
+
+async function handleContactSearch() {
+  const keyword = contactKeyword.value.trim()
+  contactSearchDone.value = false
+  contactResults.value = []
+  if (keyword.length < 2) {
+    showToast('请输入至少 2 个字符')
+    return
+  }
+
+  searchingContacts.value = true
+  try {
+    contactResults.value = await searchContacts(keyword)
+    contactSearchDone.value = true
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '搜索联系人失败')
+  } finally {
+    searchingContacts.value = false
+  }
+}
+
+async function startContactChat(contact: ContactSearchUser) {
+  startingContactId.value = contact.id
+  try {
+    const thread = await createChatThread({
+      target_user_id: contact.id,
+      source_type: 'contact_search',
+      source_id: contact.claw_id,
+    })
+    navigateTo(`/pages/chat/index?threadId=${thread.id}`)
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '创建聊天失败')
+  } finally {
+    startingContactId.value = ''
   }
 }
 
@@ -346,6 +433,14 @@ function getCounterpartName(thread: ChatThread) {
   return thread.counterpart?.nickname || thread.counterpart?.full_name || thread.counterpart?.email || '校园用户'
 }
 
+function getContactName(contact: ContactSearchUser) {
+  return contact.nickname || contact.full_name || contact.claw_id || 'CampusClaw 用户'
+}
+
+function getContactInitial(contact: ContactSearchUser) {
+  return getContactName(contact).slice(0, 1)
+}
+
 function getThreadStateText(threadId: string) {
   if (threadTyping.value[threadId]) {
     return '对方正在输入...'
@@ -360,7 +455,7 @@ function getLastMessageText(thread: ChatThread) {
   if (thread.last_message.is_withdrawn) {
     return thread.last_message.sender.id === thread.counterpart?.id ? '对方撤回了一条消息' : '你撤回了一条消息'
   }
-  return thread.last_message.body
+  return thread.last_message.body || (thread.last_message.image_url ? '[图片]' : '')
 }
 
 async function handleMarkRead(notificationId: string) {
@@ -425,7 +520,7 @@ function goProfile() {
 }
 
 function goDating() {
-  navigateTo('/pages/dating/index')
+  uni.switchTab({ url: '/pages/publish/index' })
 }
 
 function goForum() {
@@ -434,6 +529,10 @@ function goForum() {
 </script>
 
 <style scoped lang="scss">
+.hero {
+  padding-top: 4rpx;
+}
+
 .status-row {
   display: flex;
   gap: 16rpx;
@@ -473,6 +572,78 @@ function goForum() {
   font-size: 34rpx;
   font-weight: 700;
   color: #102133;
+}
+
+.contact-search-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.contact-search-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-search-button {
+  flex-shrink: 0;
+  min-width: 132rpx;
+}
+
+.contact-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.contact-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 20rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 250, 245, 0.86);
+  border: 1rpx solid rgba(16, 33, 51, 0.08);
+}
+
+.contact-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.contact-avatar {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: rgba(241, 107, 79, 0.14);
+}
+
+.contact-avatar.fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f16b4f;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.contact-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.contact-name {
+  margin-bottom: 0;
+  font-size: 30rpx;
+}
+
+.small-empty {
+  padding: 24rpx 0 0;
 }
 
 .section-head {

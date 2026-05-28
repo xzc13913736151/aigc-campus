@@ -1,27 +1,9 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Forum</text>
+      <text class="eyebrow">CampusClaw 论坛</text>
       <view style="height: 18rpx" />
       <text class="title">校园最新动态、求助、分享和灵感，都从这里开始。</text>
-      <view style="height: 18rpx" />
-      <text class="subtitle">
-        默认按最新发布时间展示帖子。你也可以从顶部快速进入组队匹配或恋爱匹配，继续拓展连接。
-      </text>
-      <view style="height: 24rpx" />
-
-      <view class="entry-grid">
-        <view class="card entry-card accent-team" @tap="goTeammates">
-          <text class="entry-title">组队匹配</text>
-          <view style="height: 8rpx" />
-          <text class="entry-desc">找项目伙伴、活动搭子、比赛队友</text>
-        </view>
-        <view class="card entry-card accent-dating" @tap="goDating">
-          <text class="entry-title">恋爱匹配</text>
-          <view style="height: 8rpx" />
-          <text class="entry-desc">完善资料、浏览候选人、建立新连接</text>
-        </view>
-      </view>
 
       <view v-if="!hasToken" class="login-cta">
         <button class="btn btn-primary" @tap="goLogin">微信一键登录</button>
@@ -29,21 +11,6 @@
     </view>
 
     <view class="card section forum-filter-card">
-      <view class="toolbar-head">
-        <view>
-          <text class="section-title">最新帖子</text>
-          <view style="height: 8rpx" />
-          <text class="section-desc"
-            >优先展示最新发布的校园内容，也支持按关键词和分类快速筛选。</text
-          >
-        </view>
-        <button class="create-post-btn" style="width: 200rpx; height: 72rpx;" @tap="goCreate">
-          <text class="create-post-label">发布帖子</text>
-        </button>
-      </view>
-
-      <view style="height: 20rpx" />
-
       <view class="field">
         <text class="label">搜索内容</text>
         <input
@@ -57,30 +24,29 @@
 
       <view style="height: 18rpx" />
 
-      <scroll-view
-        scroll-x
-        class="category-scroll"
-        enhanced
-        show-scrollbar="false"
-      >
-        <view class="category-row">
-          <button
-            v-for="item in categories"
-            :key="item"
-            class="category-chip"
-            :class="{ active: selectedCategory === item }"
-            @tap="selectCategory(item)"
-          >
-            {{ item }}
-          </button>
-        </view>
-      </scroll-view>
-
-      <view v-if="hasToken && myPosts.length" style="height: 18rpx" />
-
-      <view v-if="hasToken && myPosts.length" class="action-row">
-        <button class="btn btn-ghost" size="mini" @tap="toggleMineOnly">
+      <view class="action-row filter-action-row">
+        <button class="btn btn-secondary" size="mini" :disabled="loadingList" @tap="refreshAll">
+          {{ loadingList ? "搜索中..." : "搜索帖子" }}
+        </button>
+        <button class="create-post-btn" @tap="goCreate">
+          <text class="create-post-label">发布帖子</text>
+        </button>
+        <button v-if="hasToken && myPosts.length" class="btn btn-ghost" size="mini" @tap="toggleMineOnly">
           {{ mineOnly ? "查看全部帖子" : "只看我的帖子" }}
+        </button>
+      </view>
+
+      <view style="height: 18rpx" />
+
+      <view class="category-row">
+        <button
+          v-for="item in categories"
+          :key="item"
+          class="category-chip"
+          :class="{ active: selectedCategory === item }"
+          @tap="selectCategory(item)"
+        >
+          {{ item }}
         </button>
       </view>
 
@@ -88,64 +54,21 @@
       <text v-if="pageError" class="error">{{ pageError }}</text>
     </view>
 
-    <view v-if="hasToken && myPosts.length && !mineOnly" class="card section">
-      <view class="toolbar-head">
+    <view class="section">
+      <view class="result-head">
         <view>
-          <text class="section-title">我的帖子</text>
+          <text class="section-title">{{ query.trim() ? "帖子搜索结果" : "最新帖子" }}</text>
           <view style="height: 8rpx" />
-          <text class="section-desc"
-            >这里会优先显示你最近发过的内容，方便继续编辑和跟进互动。</text
-          >
+          <text class="section-desc">
+            {{ query.trim() ? `已为你找到 ${displayPosts.length} 条相关帖子` : `当前共有 ${displayPosts.length} 条帖子` }}
+          </text>
         </view>
-        <button class="btn btn-ghost" size="mini" @tap="toggleMineOnly">
-          只看我的
-        </button>
-      </view>
-
-      <view style="height: 20rpx" />
-
-      <view class="grid">
-        <view
-          v-for="post in myPosts.slice(0, 3)"
-          :key="post.id"
-          class="my-post-card"
-        >
-          <view class="post-head">
-            <view style="flex: 1">
-              <text class="section-title post-title">{{ post.title }}</text>
-              <view style="height: 8rpx" />
-              <text class="section-desc">{{ getPostPreview(post) }}</text>
-            </view>
-            <text class="tag">{{ post.category || "未分类" }}</text>
-          </view>
-          <view style="height: 14rpx" />
-          <view class="meta-row">
-            <text class="helper">点赞 {{ post.like_count }}</text>
-            <text class="helper">评论 {{ post.comment_count }}</text>
-          </view>
-          <view style="height: 16rpx" />
-          <view class="action-row">
-            <button
-              class="btn btn-ghost"
-              size="mini"
-              @tap="openDetail(post.id)"
-            >
-              查看详情
-            </button>
-            <button
-              class="btn btn-secondary"
-              size="mini"
-              @tap="goEdit(post.id)"
-            >
-              继续编辑
-            </button>
-          </view>
-        </view>
+        <text v-if="loadingList" class="helper">加载中...</text>
       </view>
     </view>
 
     <view v-if="displayPosts.length" class="grid section">
-      <view v-for="post in displayPosts" :key="post.id" class="card post-card">
+      <view v-for="post in displayPosts" :key="post.id" class="card post-card" @tap="openDetail(post.id)">
         <view class="post-head">
           <view style="flex: 1">
             <text class="section-title post-title">{{ post.title }}</text>
@@ -199,14 +122,22 @@
         <view style="height: 18rpx" />
 
         <view class="action-row">
-          <button class="btn btn-ghost" size="mini" @tap="openDetail(post.id)">
+          <button class="btn btn-ghost" size="mini" @tap.stop="openDetail(post.id)">
             查看详情
+          </button>
+          <button
+            v-if="!isMine(post)"
+            class="btn btn-secondary"
+            size="mini"
+            @tap.stop="contactAuthor(post)"
+          >
+            联系TA
           </button>
           <button
             class="btn btn-ghost"
             size="mini"
             :disabled="likingPostId === post.id"
-            @tap="handleLike(post.id)"
+            @tap.stop="handleLike(post.id)"
           >
             {{
               post.is_liked
@@ -218,7 +149,7 @@
             v-if="isMine(post)"
             class="btn btn-secondary"
             size="mini"
-            @tap="goEdit(post.id)"
+            @tap.stop="goEdit(post.id)"
           >
             编辑
           </button>
@@ -281,7 +212,18 @@ const hasToken = ref(isAuthenticated.value);
 const mineOnly = ref(false);
 
 const displayPosts = computed(() => {
-  const source = mineOnly.value ? myPosts.value : posts.value;
+  let source = mineOnly.value ? myPosts.value : posts.value;
+  if (query.value.trim()) {
+    const q = query.value.trim().toLowerCase()
+    source = source.filter((p: ForumPost) =>
+      p.title.toLowerCase().includes(q) ||
+      p.body.toLowerCase().includes(q) ||
+      (p.summary && p.summary.toLowerCase().includes(q))
+    )
+  }
+  if (selectedCategory.value !== "全部") {
+    source = (source as ForumPost[]).filter((p: ForumPost) => p.category === selectedCategory.value)
+  }
   return [...source].sort((first, second) =>
     second.created_at.localeCompare(first.created_at),
   );
@@ -394,16 +336,15 @@ function formatDate(value: string) {
   return value.replace("T", " ").slice(0, 16);
 }
 
-function goTeammates() {
-  navigateTo("/pages/teammates/index");
-}
-
-function goDating() {
-  navigateTo("/pages/dating/index");
-}
-
 function goLogin() {
   redirectToLogin("/pages/forum/index");
+}
+
+function contactAuthor(post: ForumPost) {
+  if (!ensureAuthenticated(`/pages/chat/index?targetUserId=${post.author.id}`)) {
+    return
+  }
+  navigateTo(`/pages/chat/index?targetUserId=${post.author.id}`)
 }
 </script>
 
@@ -467,9 +408,9 @@ function goLogin() {
 }
 
 .create-post-btn {
-  flex: 0 0 200rpx;
-  max-width: 200rpx;
-  min-width: 200rpx;
+  flex: 0 0 188rpx;
+  max-width: 188rpx;
+  min-width: 188rpx;
   height: 72rpx;
   min-height: 72rpx;
   padding: 0;
@@ -480,6 +421,7 @@ function goLogin() {
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 1;
 }
 
 .create-post-btn::after {
@@ -490,26 +432,21 @@ function goLogin() {
   color: #fff;
   font-size: 26rpx;
   font-weight: 700;
-  line-height: 72rpx;
+  line-height: 1;
   text-align: center;
   white-space: nowrap;
 }
 
-.forum-filter-card .category-scroll {
-  margin-bottom: 4rpx;
-}
-
-.category-scroll {
-  width: 100%;
-  white-space: nowrap;
-}
-
 .category-row {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
   gap: 16rpx;
 }
 
 .category-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 66rpx;
   padding: 0 24rpx;
   border-radius: 999rpx;
@@ -518,6 +455,8 @@ function goLogin() {
   color: #102133;
   font-size: 24rpx;
   font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .category-chip::after {
@@ -532,6 +471,12 @@ function goLogin() {
 
 .forum-filter-card .action-row {
   justify-content: flex-start;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.filter-action-row {
+  flex-wrap: wrap;
 }
 
 .post-card,
@@ -557,6 +502,13 @@ function goLogin() {
 .post-title {
   margin-bottom: 0;
   font-size: 34rpx;
+}
+
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
 }
 
 .meta-row,

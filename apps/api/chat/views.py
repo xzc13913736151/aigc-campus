@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, permissions, status
+from rest_framework import generics, parsers, permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,6 +11,7 @@ from moderation.services import get_blocked_user_ids, is_blocked_pair
 from .models import ChatMessage, ChatThread
 from .serializers import (
     ChatMarkReadSerializer,
+    ChatImageMessageCreateSerializer,
     ChatMessageCreateSerializer,
     ChatMessageSerializer,
     ChatMessageWithdrawSerializer,
@@ -141,6 +142,36 @@ class ChatMessageListCreateAPIView(generics.ListCreateAPIView):
         push_chat_message(message)
 
         response_serializer = ChatMessageSerializer(message, context=self.get_serializer_context())
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ChatImageMessageCreateAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def get_thread(self):
+        thread = get_object_or_404(ChatThread.objects.select_related("user_a", "user_b"), pk=self.kwargs["thread_id"])
+        if self.request.user.id not in {thread.user_a_id, thread.user_b_id}:
+            raise PermissionDenied("You are not a participant in this chat.")
+        counterpart = thread.user_b if thread.user_a_id == self.request.user.id else thread.user_a
+        if is_blocked_pair(self.request.user, counterpart):
+            raise PermissionDenied("This chat is unavailable because one of you has blocked the other.")
+        return thread
+
+    def post(self, request, thread_id):
+        thread = self.get_thread()
+        serializer = ChatImageMessageCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        message = ChatMessage.objects.create(thread=thread, sender=request.user, image=serializer.validated_data["image"])
+        thread.updated_at = timezone.now()
+        thread.hidden_for_user_a = False
+        thread.hidden_for_user_b = False
+        thread.save(update_fields=["updated_at", "hidden_for_user_a", "hidden_for_user_b"])
+
+        notify_chat_counterpart(thread, message)
+        push_chat_message(message)
+        response_serializer = ChatMessageSerializer(message, context={"request": request})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
 

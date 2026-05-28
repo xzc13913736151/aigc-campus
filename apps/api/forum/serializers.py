@@ -2,22 +2,35 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from accounts.serializers import UserSerializer
-from .models import ForumComment, ForumPost, ForumPostImage
+from .models import ForumComment, ForumCommentLike, ForumPost, ForumPostImage
 
 
 class ForumCommentSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
     replies = serializers.SerializerMethodField()
+    like_count = serializers.SerializerMethodField()
+    is_liked = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumComment
-        fields = ("id", "author", "parent", "body", "replies", "created_at")
+        fields = ("id", "author", "parent", "body", "like_count", "is_liked", "replies", "created_at")
         read_only_fields = ("id", "author", "replies", "created_at")
 
     @extend_schema_field(serializers.ListField)
     def get_replies(self, obj):
         replies = obj.replies.select_related("author").all()
         return ForumCommentSerializer(replies, many=True, context=self.context).data
+
+    @extend_schema_field(serializers.IntegerField)
+    def get_like_count(self, obj):
+        return obj.likes.count()
+
+    @extend_schema_field(serializers.BooleanField)
+    def get_is_liked(self, obj):
+        request = self.context.get("request")
+        if not request or not request.user.is_authenticated:
+            return False
+        return obj.likes.filter(user=request.user).exists()
 
     def validate_parent(self, value):
         post = self.context.get("post")

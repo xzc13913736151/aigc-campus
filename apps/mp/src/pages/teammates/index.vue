@@ -1,23 +1,9 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Teaming</text>
+      <text class="eyebrow">CampusClaw 组队匹配</text>
       <view style="height: 18rpx" />
-      <text class="title">把“想做什么”和“需要谁”说清楚，更容易找到合适队友。</text>
-      <view style="height: 18rpx" />
-      <text class="subtitle">
-        这里适合发布项目招募、比赛组队、活动搭子和学习协作需求。先看广场，再决定要不要发起自己的招募。
-      </text>
-      <view style="height: 24rpx" />
-
-      <view class="status-row">
-        <view class="status-chip" :class="{ active: hasToken }">
-          <text>{{ hasToken ? '已登录' : '未登录' }}</text>
-        </view>
-        <view class="status-chip" :class="{ complete: profileComplete }">
-          <text>{{ hasToken ? (profileComplete ? '可以发起与申请' : '请先完善资料') : '登录后可操作' }}</text>
-        </view>
-      </view>
+      <text class="title">把目标和需求说清楚，更容易找到合适队友。</text>
     </view>
 
     <view class="grid stats-grid section">
@@ -43,11 +29,8 @@
         <view>
           <text class="section-title">组队广场</text>
           <view style="height: 8rpx" />
-          <text class="section-desc">先搜索你感兴趣的方向，再决定是加入别人，还是自己发起一条招募。</text>
+          <text class="section-desc">先搜索你感兴趣的方向，再决定是加入别人，还是自己发起一条招募。下拉页面可以更新内容。</text>
         </view>
-        <button class="btn btn-ghost" size="mini" :disabled="loadingList" @tap="refreshAll">
-          {{ loadingList ? '刷新中...' : '刷新广场' }}
-        </button>
       </view>
 
       <view style="height: 20rpx" />
@@ -59,13 +42,16 @@
           class="input"
           type="text"
           placeholder="搜索项目方向、关键词或你想加入的团队"
-          @confirm="refreshAll"
+          @confirm="searchPosts"
         />
       </view>
 
       <view style="height: 18rpx" />
 
       <view class="action-row">
+        <button class="btn btn-secondary" :disabled="loadingList" @tap="searchPosts">
+          {{ loadingList ? '搜索中...' : '搜索招募' }}
+        </button>
         <button v-if="!hasToken" class="btn btn-primary" @tap="goLogin">去登录</button>
         <button v-else-if="!profileComplete" class="btn btn-primary" @tap="goProfile">完善资料</button>
         <view v-else class="btn btn-primary action-button" @tap="openComposer">
@@ -173,6 +159,18 @@
     </view>
 
     <view class="section">
+      <view class="result-head">
+        <view>
+          <text class="section-title">{{ query.trim() ? '搜索结果' : '最新招募' }}</text>
+          <view style="height: 8rpx" />
+          <text class="section-desc">
+            {{ query.trim() ? `已为你找到 ${posts.length} 条相关招募` : `当前广场共有 ${posts.length} 条招募` }}
+          </text>
+        </view>
+        <text v-if="loadingList" class="helper">加载中...</text>
+      </view>
+      <view style="height: 18rpx" />
+
       <view v-if="posts.length" class="grid">
         <view v-for="post in posts" :key="post.id" class="card team-card">
           <view class="team-head">
@@ -185,7 +183,10 @@
           </view>
 
           <view style="height: 14rpx" />
-          <text class="helper">发起人：{{ getPostAuthorName(post) }}</text>
+          <view class="author-row">
+            <text class="helper">发起人：{{ getPostAuthorName(post) }}</text>
+            <button class="link-button" size="mini" @tap="startChatToAuthor(post)">联系Ta</button>
+          </view>
           <view style="height: 12rpx" />
           <text class="section-desc">{{ post.details }}</text>
 
@@ -223,25 +224,13 @@
       </view>
     </view>
 
-    <view v-if="composerVisible" id="composer-anchor" class="section">
-      <TeamComposer
-        :has-token="hasToken"
-        :profile-complete="profileComplete"
-        :editing-post="editingPost"
-        @login="goLogin"
-        @profile="goProfile"
-        @saved="handleComposerSaved"
-        @cancel="cancelEdit"
-      />
-    </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 
-import TeamComposer from '../../components/teammates/TeamComposer.vue'
 import type { TeamApplication, TeamPost } from '../../types/api'
 import { currentUser, ensureAuthenticated, isAuthenticated, profileOnboarded, redirectToLogin } from '../../utils/auth'
 import {
@@ -270,8 +259,6 @@ const posts = ref<TeamPost[]>([])
 const myPosts = ref<TeamPost[]>([])
 const myApplications = ref<TeamApplication[]>([])
 const receivedApplications = ref<TeamApplication[]>([])
-const editingPost = ref<TeamPost | null>(null)
-const composerVisible = ref(false)
 
 const applyMessages = reactive<Record<string, string>>({})
 
@@ -284,6 +271,11 @@ onMounted(() => {
 onShow(() => {
   hasToken.value = isAuthenticated.value
   refreshAll()
+})
+
+onPullDownRefresh(async () => {
+  await refreshAll()
+  uni.stopPullDownRefresh()
 })
 
 async function refreshAll() {
@@ -311,6 +303,10 @@ async function refreshAll() {
   } finally {
     loadingList.value = false
   }
+}
+
+function searchPosts() {
+  void refreshAll()
 }
 
 function getPostAuthorName(post: TeamPost) {
@@ -372,23 +368,11 @@ function canApply(post: TeamPost) {
   return !myApplications.value.some((application) => application.post.id === post.id)
 }
 
-async function scrollToComposer() {
-  await nextTick()
-  uni.pageScrollTo({
-    selector: '#composer-anchor',
-    duration: 280,
-    fail: () => {
-      uni.pageScrollTo({ scrollTop: 1200, duration: 280 })
-    },
-  })
-}
-
 function openComposer() {
   if (!ensureAuthenticated('/pages/teammates/index')) {
     return
   }
-  composerVisible.value = true
-  void scrollToComposer()
+  navigateTo('/pages/teammates/create')
 }
 
 function focusMyPosts() {
@@ -432,21 +416,7 @@ async function handleReview(applicationId: string, status: 'accepted' | 'rejecte
 }
 
 function editPost(post: TeamPost) {
-  editingPost.value = post
-  composerVisible.value = true
-  void scrollToComposer()
-}
-
-function cancelEdit() {
-  editingPost.value = null
-  composerVisible.value = false
-}
-
-async function handleComposerSaved() {
-  editingPost.value = null
-  composerVisible.value = false
-  await refreshAll()
-  uni.pageScrollTo({ scrollTop: 0, duration: 200 })
+  navigateTo(`/pages/teammates/create?id=${post.id}`)
 }
 
 async function togglePostStatus(post: TeamPost) {
@@ -466,10 +436,6 @@ async function handleDeletePost(postId: string) {
   deletingPostId.value = postId
   try {
     await deleteTeammatePost(postId)
-    if (editingPost.value?.id === postId) {
-      editingPost.value = null
-      composerVisible.value = false
-    }
     showToast('招募已删除', 'success')
     await refreshAll()
   } catch (error) {
@@ -485,6 +451,21 @@ function goLogin() {
 
 function goProfile() {
   navigateTo('/pages/profile/index')
+}
+
+function startChatToAuthor(post: TeamPost) {
+  if (!ensureAuthenticated(`/pages/chat/index?targetUserId=${post.author.id}`)) {
+    return
+  }
+  if (!post.author.id) {
+    showToast('暂时无法联系该发起人')
+    return
+  }
+  if (post.author.id === currentUser.value?.id) {
+    showToast('这是你自己发起的招募')
+    return
+  }
+  navigateTo(`/pages/chat/index?targetUserId=${post.author.id}&sourceType=team_post&sourceId=${post.id}`)
 }
 </script>
 
@@ -546,6 +527,35 @@ function goProfile() {
 .team-head {
   justify-content: space-between;
   align-items: flex-start;
+}
+
+.result-head,
+.author-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.link-button {
+  flex-shrink: 0;
+  min-height: 52rpx;
+  padding: 0 20rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(241, 107, 79, 0.12);
+  color: #f16b4f;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.link-button::after {
+  border: 0;
 }
 
 .team-title,

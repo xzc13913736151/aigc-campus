@@ -25,6 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = (
             "id",
+            "claw_id",
             "email",
             "full_name",
             "nickname",
@@ -34,7 +35,25 @@ class UserSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "role", "is_email_verified", "email_verified_at", "created_at", "updated_at")
+        read_only_fields = ("id", "claw_id", "role", "is_email_verified", "email_verified_at", "created_at", "updated_at")
+
+
+class ContactSearchUserSerializer(serializers.ModelSerializer):
+    headline = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ("id", "claw_id", "nickname", "full_name", "headline", "avatar_url")
+        read_only_fields = fields
+
+    def get_headline(self, obj):
+        profile = getattr(obj, "profile", None)
+        return getattr(profile, "headline", "") if profile else ""
+
+    def get_avatar_url(self, obj):
+        profile = getattr(obj, "profile", None)
+        return getattr(profile, "avatar_url", "") if profile else ""
 
 
 class EmailCodeRequestSerializer(serializers.Serializer):
@@ -147,6 +166,7 @@ class WechatLoginSerializer(serializers.Serializer):
         "wechat_unconfigured": "WeChat mini program credentials are not configured.",
         "wechat_code_invalid": "WeChat login failed.",
         "wechat_openid_missing": "WeChat login response is missing openid.",
+        "wechat_unreachable": "WeChat login service is temporarily unavailable.",
     }
 
     def validate_code(self, value):
@@ -178,27 +198,25 @@ class WechatLoginSerializer(serializers.Serializer):
             "user": UserSerializer(user).data,
         }
 
-    def _create_demo_login(self):
-        return self._build_login_payload("demo-wechat-local", "CampusClaw Demo")
-
     def create(self, validated_data):
         if not settings.WECHAT_MINIAPP_APPID or not settings.WECHAT_MINIAPP_SECRET:
-            if settings.DEBUG:
-                return self._create_demo_login()
             self.fail("wechat_unconfigured")
 
-        response = requests.get(
-            "https://api.weixin.qq.com/sns/jscode2session",
-            params={
-                "appid": settings.WECHAT_MINIAPP_APPID,
-                "secret": settings.WECHAT_MINIAPP_SECRET,
-                "js_code": validated_data["code"],
-                "grant_type": "authorization_code",
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = requests.get(
+                "https://api.weixin.qq.com/sns/jscode2session",
+                params={
+                    "appid": settings.WECHAT_MINIAPP_APPID,
+                    "secret": settings.WECHAT_MINIAPP_SECRET,
+                    "js_code": validated_data["code"],
+                    "grant_type": "authorization_code",
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except (requests.RequestException, ValueError):
+            self.fail("wechat_unreachable")
 
         if payload.get("errcode"):
             self.fail("wechat_code_invalid")

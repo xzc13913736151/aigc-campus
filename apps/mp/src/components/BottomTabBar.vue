@@ -54,7 +54,7 @@ type TabItem = {
 
 const leftItems: TabItem[] = [
   { path: '/pages/forum/index', label: '论坛', iconClass: 'icon-forum' },
-  { path: '/pages/publish/index', label: '发布', iconClass: 'icon-publish' },
+  { path: '/pages/publish/index', label: '匹配', iconClass: 'icon-publish' },
 ]
 
 const rightItems: TabItem[] = [

@@ -31,6 +31,7 @@ staticfiles/
 .env
 .env.local
 .env.*.local
+config.yaml
 project.private.config.json
 
 # OS

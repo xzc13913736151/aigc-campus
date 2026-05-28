@@ -7,6 +7,7 @@ export type RequestOptions = {
   data?: Record<string, unknown> | string | undefined
   auth?: boolean
   headers?: Record<string, string>
+  timeout?: number
 }
 
 async function sendRequest(
@@ -15,13 +16,14 @@ async function sendRequest(
   data: RequestOptions['data'],
   token: string | null,
   headers: Record<string, string>,
+  timeout: number,
 ) {
   try {
     return await uni.request({
       url,
       method: method as UniApp.RequestOptions['method'],
       data,
-      timeout: 15000,
+      timeout,
       header: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -32,22 +34,22 @@ async function sendRequest(
     const message =
       typeof (error as { errMsg?: unknown })?.errMsg === 'string'
         ? (error as { errMsg: string }).errMsg
-        : '请求后端失败，请确认本地服务已启动'
+        : '请求服务失败，请稍后重试'
     throw new Error(message)
   }
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = 'GET', data, auth = true, headers = {} } = options
+  const { method = 'GET', data, auth = true, headers = {}, timeout = 15000 } = options
   const url = `${BASE_URL}/${path.replace(/^\//, '')}`
   let token = auth ? getAccessToken() : null
-  let response = await sendRequest(url, method, data, token, headers)
+  let response = await sendRequest(url, method, data, token, headers, timeout)
 
   if (auth && response.statusCode === 401) {
     const refreshedToken = await refreshAccessToken()
     if (refreshedToken) {
       token = refreshedToken
-      response = await sendRequest(url, method, data, token, headers)
+      response = await sendRequest(url, method, data, token, headers, timeout)
     } else {
       redirectToLogin()
     }

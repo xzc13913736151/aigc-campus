@@ -5,13 +5,13 @@ from .models import DatingMatch, DatingPreference, DatingProfile, DatingSignal
 
 @admin.register(DatingProfile)
 class DatingProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "nickname", "gender", "height_cm", "is_visible", "updated_at")
-    search_fields = ("user__email", "nickname", "personality_type")
+    list_display = ("user", "nickname", "gender", "height_cm", "weight_kg", "age", "is_visible", "updated_at")
+    search_fields = ("user__email", "nickname")
 
 
 @admin.register(DatingPreference)
 class DatingPreferenceAdmin(admin.ModelAdmin):
-    list_display = ("user", "min_height_cm", "max_height_cm", "updated_at")
+    list_display = ("user", "min_height_cm", "max_height_cm", "min_weight_kg", "max_weight_kg", "min_age", "max_age", "updated_at")
     search_fields = ("user__email",)
 
 

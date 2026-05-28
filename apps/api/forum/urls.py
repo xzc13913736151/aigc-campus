@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ForumCommentLikeToggleAPIView,
     ForumCommentListCreateAPIView,
     ForumPostDetailAPIView,
     ForumPostImageCreateAPIView,
@@ -17,4 +18,6 @@ urlpatterns = [
     path("posts/<uuid:post_id>/comments/", ForumCommentListCreateAPIView.as_view(), name="forum-comment-list"),
     path("posts/<uuid:post_id>/images/", ForumPostImageCreateAPIView.as_view(), name="forum-post-image-create"),
     path("posts/<uuid:post_id>/like/", ForumPostLikeToggleAPIView.as_view(), name="forum-post-like"),
+    path("comments/<uuid:comment_id>/like/", ForumCommentLikeToggleAPIView.as_view(), name="forum-comment-like"),
+    path("comment-likes/<uuid:comment_id>/", ForumCommentLikeToggleAPIView.as_view(), name="forum-comment-like-alias"),
 ]

@@ -1,15 +1,20 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import AssistantMessage, AssistantSession
+from .models import AssistantActionProposal, AssistantMessage, AssistantSession
 from .serializers import (
+    AssistantActionExecuteResponseSerializer,
+    AssistantActionProposalSerializer,
     AssistantMessageCreateSerializer,
     AssistantMessageSerializer,
     AssistantSessionCreateSerializer,
     AssistantSessionSerializer,
 )
-from .services import build_assistant_reply, default_session_title
+from .services import build_assistant_reply_with_history, default_session_title
+from .skills import create_action_proposal, execute_action
 
 
 class AssistantSessionListCreateAPIView(generics.ListCreateAPIView):
@@ -60,6 +65,8 @@ class AssistantMessageListCreateAPIView(generics.ListCreateAPIView):
         session = self.get_session()
         serializer = AssistantMessageCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        previous_messages = list(session.messages.order_by("-created_at")[:8])
+        previous_messages.reverse()
 
         user_message = AssistantMessage.objects.create(
             session=session,
@@ -69,8 +76,10 @@ class AssistantMessageListCreateAPIView(generics.ListCreateAPIView):
         assistant_message = AssistantMessage.objects.create(
             session=session,
             role=AssistantMessage.Role.ASSISTANT,
-            body=build_assistant_reply(session.page_type, serializer.validated_data["body"]),
+            body=build_assistant_reply_with_history(session.page_type, serializer.validated_data["body"], previous_messages),
         )
+        proposal_data = create_action_proposal(request.user, session, assistant_message, serializer.validated_data["body"])
+        action = AssistantActionProposal.objects.create(**proposal_data)
         if not session.title or session.title == default_session_title(session.page_type):
             session.title = serializer.validated_data["body"][:24]
         session.save()
@@ -80,6 +89,44 @@ class AssistantMessageListCreateAPIView(generics.ListCreateAPIView):
                 "user_message": AssistantMessageSerializer(user_message).data,
                 "assistant_message": AssistantMessageSerializer(assistant_message).data,
                 "session": AssistantSessionSerializer(session).data,
+                "actions": AssistantActionProposalSerializer([action], many=True).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+class AssistantSessionActionListAPIView(generics.ListAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AssistantActionProposalSerializer
+
+    def get_queryset(self):
+        session = get_object_or_404(AssistantSession, pk=self.kwargs["session_id"], user=self.request.user)
+        return AssistantActionProposal.objects.filter(
+            session=session,
+            user=self.request.user,
+            status=AssistantActionProposal.Status.PENDING,
+            expires_at__gt=timezone.now(),
+        ).order_by("-created_at")
+
+
+class AssistantActionExecuteAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, action_id):
+        proposal = get_object_or_404(
+            AssistantActionProposal.objects.select_related("user", "session", "message"),
+            pk=action_id,
+            user=request.user,
+        )
+        result = execute_action(proposal)
+        proposal.status = AssistantActionProposal.Status.EXECUTED
+        proposal.executed_at = timezone.now()
+        proposal.result = result
+        proposal.save(update_fields=["status", "executed_at", "result", "updated_at"])
+        return Response(
+            {
+                "action": AssistantActionProposalSerializer(proposal).data,
+                "result": result,
+            },
+            status=status.HTTP_200_OK,
         )

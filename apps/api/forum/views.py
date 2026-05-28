@@ -9,7 +9,7 @@ from drf_spectacular.utils import extend_schema, inline_serializer
 from notifications.models import Notification
 from notifications.services import create_notification
 
-from .models import ForumComment, ForumPost, ForumPostImage, ForumPostLike
+from .models import ForumComment, ForumCommentLike, ForumPost, ForumPostImage, ForumPostLike
 from .serializers import ForumCommentSerializer, ForumPostImageSerializer, ForumPostSerializer
 
 
@@ -145,6 +145,40 @@ class ForumPostLikeToggleAPIView(APIView):
             extra={"post_id": str(post.id)},
         )
         return Response({"liked": True, "like_count": post.likes.count()}, status=status.HTTP_200_OK)
+
+
+class ForumCommentLikeToggleAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={
+            200: inline_serializer(
+                name="ForumCommentLikeToggleResponse",
+                fields={
+                    "liked": serializers.BooleanField(),
+                    "like_count": serializers.IntegerField(),
+                },
+            ),
+        },
+    )
+    def post(self, request, comment_id):
+        comment = get_object_or_404(ForumComment, pk=comment_id)
+        like, created = ForumCommentLike.objects.get_or_create(comment=comment, user=request.user)
+        if not created:
+            like.delete()
+            return Response({"liked": False, "like_count": comment.likes.count()}, status=status.HTTP_200_OK)
+        create_notification(
+            recipient=comment.author,
+            actor=request.user,
+            type=Notification.Type.FORUM_LIKE,
+            title="你的评论收到点赞",
+            body=f"{request.user.nickname or request.user.email} 点赞了你在《{comment.post.title}》下的评论。",
+            target_type="forum_post",
+            target_id=str(comment.post_id),
+            extra={"post_id": str(comment.post_id), "comment_id": str(comment.id)},
+        )
+        return Response({"liked": True, "like_count": comment.likes.count()}, status=status.HTTP_200_OK)
 
 
 class ForumPostImageCreateAPIView(generics.CreateAPIView):

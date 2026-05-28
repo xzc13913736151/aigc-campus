@@ -22,6 +22,12 @@ export function createTeammatePost(payload: {
   })
 }
 
+export function fetchTeammatePost(postId: string) {
+  return request<TeamPost>(`teammates/posts/${postId}/`, {
+    auth: false,
+  })
+}
+
 export function updateTeammatePost(
   postId: string,
   payload: Partial<Pick<TeamPost, 'title' | 'summary' | 'details' | 'target_size' | 'tags' | 'required_skills' | 'status'>>,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from .models import AssistantSession
+from .agent import AgentCallError, call_agent
+from .models import AssistantMessage, AssistantSession
 
 
 PAGE_HINTS = {
@@ -24,6 +25,36 @@ def default_session_title(page_type: str) -> str:
 
 
 def build_assistant_reply(page_type: str, prompt: str) -> str:
+    try:
+        return build_agent_reply(page_type, prompt)
+    except AgentCallError:
+        return build_fallback_reply(page_type, prompt)
+
+
+def build_agent_reply(page_type: str, prompt: str) -> str:
+    hint = PAGE_HINTS.get(page_type, PAGE_HINTS[AssistantSession.PageType.GENERAL])
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 CampusClaw 小程序里的 AI 助手。"
+                "你帮助校园用户写论坛帖子、整理组队招募、优化恋爱匹配资料、润色聊天回复。"
+                "回答要具体、自然、中文优先，不要提到你在使用本地模板或演示环境。"
+            ),
+        },
+        {
+            "role": "system",
+            "content": f"当前页面场景：{hint}",
+        },
+        {
+            "role": "user",
+            "content": prompt.strip(),
+        },
+    ]
+    return call_agent(messages, tools=ASSISTANT_TOOLS)
+
+
+def build_fallback_reply(page_type: str, prompt: str) -> str:
     cleaned_prompt = prompt.strip()
     hint = PAGE_HINTS.get(page_type, PAGE_HINTS[AssistantSession.PageType.GENERAL])
     excerpt = cleaned_prompt[:80]
@@ -37,3 +68,56 @@ def build_assistant_reply(page_type: str, prompt: str) -> str:
     if page_type == AssistantSession.PageType.ME:
         return f"{hint}\n\n个人资料最重要的是让别人快速知道你是谁、你在找什么。围绕“{excerpt}”，我可以继续帮你润色成更自然的自我介绍。 "
     return f"{hint}\n\n你刚才提到“{excerpt}”。如果你愿意，我可以继续把它拆成更具体的行动建议。 "
+
+
+def build_assistant_reply_with_history(page_type: str, prompt: str, history: list[AssistantMessage]) -> str:
+    try:
+        return build_agent_reply_with_history(page_type, prompt, history)
+    except AgentCallError:
+        return build_fallback_reply(page_type, prompt)
+
+
+def build_agent_reply_with_history(page_type: str, prompt: str, history: list[AssistantMessage]) -> str:
+    hint = PAGE_HINTS.get(page_type, PAGE_HINTS[AssistantSession.PageType.GENERAL])
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是 CampusClaw 小程序里的 AI 助手。"
+                "你帮助校园用户写论坛帖子、整理组队招募、优化恋爱匹配资料、润色聊天回复。"
+                "结合历史对话回答，尽量给出可以直接复制或执行的建议。"
+            ),
+        },
+        {
+            "role": "system",
+            "content": f"当前页面场景：{hint}",
+        },
+    ]
+    messages.extend({"role": item.role, "content": item.body} for item in history)
+    messages.append({"role": "user", "content": prompt.strip()})
+    return call_agent(messages, tools=ASSISTANT_TOOLS)
+
+
+ASSISTANT_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "campusclaw_context",
+            "description": "CampusClaw product context for forum, teaming, dating, messages and profile pages.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "page_type": {
+                        "type": "string",
+                        "enum": ["forum", "publish", "messages", "me", "general"],
+                    },
+                    "need": {
+                        "type": "string",
+                        "description": "The user goal, such as writing a post, improving a profile, or replying to a message.",
+                    },
+                },
+                "required": ["page_type", "need"],
+            },
+        },
+    }
+]

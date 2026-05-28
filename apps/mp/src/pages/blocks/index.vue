@@ -1,7 +1,7 @@
 <template>
   <view class="container">
-    <view class="section hero">
-      <text class="eyebrow">CampusClaw Safety</text>
+    <view class="card section plain-hero">
+      <text class="eyebrow">CampusClaw 黑名单</text>
       <view style="height: 18rpx" />
       <text class="title">黑名单是你的个人安全开关，用来主动切断不想继续发生的连接。</text>
       <view style="height: 18rpx" />
@@ -125,8 +125,8 @@ onShow(() => {
 </script>
 
 <style scoped lang="scss">
-.hero {
-  padding-top: 12rpx;
+.plain-hero {
+  box-shadow: 0 16rpx 48rpx rgba(16, 33, 51, 0.06);
 }
 
 .stats-grid {

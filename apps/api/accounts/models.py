@@ -13,6 +13,10 @@ from django.utils import timezone
 from common.models import UUIDTimeStampedModel
 
 
+def generate_claw_id() -> str:
+    return f"CC{secrets.token_hex(3).upper()}"
+
+
 class UserManager(BaseUserManager):
     use_in_migrations = True
 
@@ -53,6 +57,7 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimeStampedModel):
         ADMIN = "admin", "Admin"
 
     email = models.EmailField(unique=True)
+    claw_id = models.CharField(max_length=12, unique=True, blank=True)
     wechat_openid = models.CharField(max_length=128, unique=True, null=True, blank=True)
     full_name = models.CharField(max_length=120, blank=True)
     nickname = models.CharField(max_length=60, blank=True)
@@ -72,6 +77,15 @@ class User(AbstractBaseUser, PermissionsMixin, UUIDTimeStampedModel):
 
     def __str__(self) -> str:
         return self.email
+
+    def save(self, *args, **kwargs):
+        if not self.claw_id:
+            while True:
+                candidate = generate_claw_id()
+                if not User.objects.filter(claw_id=candidate).exists():
+                    self.claw_id = candidate
+                    break
+        super().save(*args, **kwargs)
 
 
 class EmailVerificationCode(UUIDTimeStampedModel):

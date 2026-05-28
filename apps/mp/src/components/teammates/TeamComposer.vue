@@ -70,6 +70,7 @@ const props = defineProps<{
   hasToken: boolean
   profileComplete: boolean
   editingPost: TeamPost | null
+  assistantDraft?: Record<string, unknown> | null
 }>()
 
 const emit = defineEmits<{
@@ -110,6 +111,30 @@ watch(
     tagsText.value = post.tags.join(', ')
     skillsText.value = post.required_skills.join(', ')
     errorMessage.value = ''
+  },
+  { immediate: true },
+)
+
+watch(
+  () => props.assistantDraft,
+  (draft) => {
+    if (!draft || props.editingPost) {
+      return
+    }
+    title.value = typeof draft.title === 'string' ? draft.title : title.value
+    summary.value = typeof draft.summary === 'string' ? draft.summary : summary.value
+    details.value = typeof draft.details === 'string' ? draft.details : details.value
+    targetSize.value = draft.target_size === undefined || draft.target_size === null ? targetSize.value : String(draft.target_size)
+    if (Array.isArray(draft.tags)) {
+      tagsText.value = draft.tags.map(String).join(', ')
+    } else if (typeof draft.tags === 'string') {
+      tagsText.value = draft.tags
+    }
+    if (Array.isArray(draft.required_skills)) {
+      skillsText.value = draft.required_skills.map(String).join(', ')
+    } else if (typeof draft.required_skills === 'string') {
+      skillsText.value = draft.required_skills
+    }
   },
   { immediate: true },
 )
@@ -240,7 +265,7 @@ function resetForm() {
 .composer-button-text {
   font-size: 28rpx;
   font-weight: 700;
-  line-height: 88rpx;
+  line-height: 1;
   white-space: nowrap;
 }
 

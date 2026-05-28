@@ -5,13 +5,21 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
 
+from moderation.services import get_blocked_user_ids
+
 from .serializers import (
+    ContactSearchUserSerializer,
     EmailCodeRequestSerializer,
     PairUpTokenObtainPairSerializer,
     RegisterSerializer,
     UserSerializer,
     WechatLoginSerializer,
 )
+from django.contrib.auth import get_user_model
+from django.db.models import Q
+
+
+User = get_user_model()
 
 
 class EmailCodeRequestAPIView(APIView):
@@ -67,6 +75,30 @@ class CurrentUserAPIView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class ContactSearchAPIView(generics.ListAPIView):
+    serializer_class = ContactSearchUserSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        query = self.request.query_params.get("q", "").strip()
+        if len(query) < 2:
+            return User.objects.none()
+
+        blocked_user_ids = get_blocked_user_ids(self.request.user)
+        queryset = (
+            User.objects.select_related("profile")
+            .filter(is_active=True)
+            .exclude(id=self.request.user.id)
+            .exclude(id__in=blocked_user_ids)
+        )
+        normalized_query = query.upper()
+        return queryset.filter(
+            Q(claw_id__iexact=normalized_query)
+            | Q(nickname__icontains=query)
+            | Q(full_name__icontains=query)
+        )[:20]
 
 
 class LogoutAPIView(APIView):

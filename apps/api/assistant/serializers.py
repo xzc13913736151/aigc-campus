@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
-from .models import AssistantMessage, AssistantSession
+from .models import AssistantActionProposal, AssistantMessage, AssistantSession
 
 
 class AssistantMessageSerializer(serializers.ModelSerializer):
@@ -51,3 +51,26 @@ class AssistantMessageCreateSerializer(serializers.Serializer):
         if len(value) < 1:
             raise serializers.ValidationError("Message body is required.")
         return value
+
+
+class AssistantActionProposalSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssistantActionProposal
+        fields = (
+            "id",
+            "kind",
+            "title",
+            "target_page",
+            "preview",
+            "fill_payload",
+            "status",
+            "expires_at",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = fields
+
+
+class AssistantActionExecuteResponseSerializer(serializers.Serializer):
+    action = AssistantActionProposalSerializer()
+    result = serializers.DictField()

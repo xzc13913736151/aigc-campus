@@ -1,7 +1,7 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Profile</text>
+      <text class="eyebrow">CampusClaw 个人资料</text>
       <view style="height: 18rpx" />
       <text class="title">先把你自己介绍清楚，后面的论坛、组队、匹配和聊天体验才会完整。</text>
       <view style="height: 18rpx" />
@@ -117,7 +117,9 @@
 
           <view class="field">
             <text class="label">性别</text>
-            <input v-model="form.gender" class="input" type="text" placeholder="male / female / other / unknown" />
+            <picker :range="genderOptions" :value="genderIndex" @change="(e) => genderIndex = e.detail.value">
+              <view class="input">{{ genderOptions[genderIndex] }}</view>
+            </picker>
           </view>
 
           <view class="field">
@@ -178,6 +180,7 @@ import {
   setProfileOnboarded,
   syncCurrentUser,
 } from '../../utils/auth'
+import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { chooseMediaAndUpload } from '../../utils/upload'
 import { showToast } from '../../utils/ui'
 
@@ -187,6 +190,14 @@ const submitting = ref(false)
 const uploadingAvatar = ref(false)
 const errorMessage = ref('')
 const avatarPreview = ref('')
+
+const genderOptions = ['未说明', '男', '女', '其他']
+const genderValues = ['unknown', 'male', 'female', 'other']
+
+const genderIndex = computed({
+  get: () => genderValues.indexOf(form.gender) >= 0 ? genderValues.indexOf(form.gender) : 0,
+  set: (val: number) => { form.gender = genderValues[val] }
+})
 
 const form = reactive({
   nickname: '',
@@ -348,7 +359,28 @@ onShow(async () => {
     return
   }
   await loadProfile()
+  applyAssistantDraft()
 })
+
+function applyAssistantDraft() {
+  const draft = consumeAssistantDraft('/pages/profile/index', ['profile_update'])
+  if (!draft) {
+    return
+  }
+  const payload = draft.fill_payload
+  form.nickname = typeof payload.nickname === 'string' ? payload.nickname : form.nickname
+  form.headline = typeof payload.headline === 'string' ? payload.headline : form.headline
+  form.bio = typeof payload.bio === 'string' ? payload.bio : form.bio
+  form.gender = typeof payload.gender === 'string' ? payload.gender : form.gender
+  form.major = typeof payload.major === 'string' ? payload.major : form.major
+  form.grade = typeof payload.grade === 'string' ? payload.grade : form.grade
+  if (Array.isArray(payload.interests)) {
+    form.interestsText = payload.interests.map(String).join(', ')
+  } else if (typeof payload.interests === 'string') {
+    form.interestsText = payload.interests
+  }
+  showToast('AI 已填入个人资料草稿', 'success')
+}
 </script>
 
 <style scoped lang="scss">

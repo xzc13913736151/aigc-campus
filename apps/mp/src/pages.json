@@ -1,19 +1,23 @@
 {
   "pages": [
     { "path": "pages/forum/index", "style": { "navigationBarTitleText": "CampusClaw", "enablePullDownRefresh": true } },
-    { "path": "pages/publish/index", "style": { "navigationBarTitleText": "发布" } },
+    { "path": "pages/publish/index", "style": { "navigationBarTitleText": "匹配" } },
     { "path": "pages/messages/index", "style": { "navigationBarTitleText": "消息" } },
     { "path": "pages/me/index", "style": { "navigationBarTitleText": "我的" } },
     { "path": "pages/auth/login", "style": { "navigationBarTitleText": "登录" } },
     { "path": "pages/auth/register", "style": { "navigationBarTitleText": "注册说明" } },
     { "path": "pages/profile/index", "style": { "navigationBarTitleText": "个人资料" } },
     { "path": "pages/blocks/index", "style": { "navigationBarTitleText": "黑名单" } },
-    { "path": "pages/teammates/index", "style": { "navigationBarTitleText": "组队匹配" } },
-    { "path": "pages/dating/index", "style": { "navigationBarTitleText": "恋爱匹配" } },
+    { "path": "pages/teammates/index", "style": { "navigationBarTitleText": "组队匹配", "enablePullDownRefresh": true } },
+    { "path": "pages/teammates/create", "style": { "navigationBarTitleText": "发起组队" } },
+    { "path": "pages/dating/index", "style": { "navigationBarTitleText": "恋爱匹配", "enablePullDownRefresh": true } },
     { "path": "pages/forum/detail", "style": { "navigationBarTitleText": "帖子详情" } },
     { "path": "pages/forum/create", "style": { "navigationBarTitleText": "发布帖子" } },
     { "path": "pages/chat/index", "style": { "navigationBarTitleText": "聊天" } },
-    { "path": "pages/admin/index", "style": { "navigationBarTitleText": "内容审核" } }
+    { "path": "pages/admin/index", "style": { "navigationBarTitleText": "内容审核" } },
+    { "path": "pages/assistant/index", "style": { "navigationBarTitleText": "AI 助手" } },
+    { "path": "pages/trade/index", "style": { "navigationBarTitleText": "交易匹配", "enablePullDownRefresh": true } },
+    { "path": "pages/trade/create", "style": { "navigationBarTitleText": "发布交易" } }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
@@ -29,7 +33,7 @@
     "borderStyle": "black",
     "list": [
       { "pagePath": "pages/forum/index", "text": "论坛" },
-      { "pagePath": "pages/publish/index", "text": "发布" },
+      { "pagePath": "pages/publish/index", "text": "匹配" },
       { "pagePath": "pages/messages/index", "text": "消息" },
       { "pagePath": "pages/me/index", "text": "我的" }
     ]

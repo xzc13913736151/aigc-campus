@@ -1,5 +1,6 @@
 import type { ChatMessage, ChatThread } from '../types/api'
 import { request } from '../utils/request'
+import { uploadFile } from '../utils/upload'
 
 export function fetchChatThreads() {
   return request<ChatThread[]>('chat/threads/')
@@ -21,6 +22,10 @@ export function sendChatMessage(threadId: string, payload: { body: string }) {
     method: 'POST',
     data: payload,
   })
+}
+
+export function uploadChatImage(threadId: string, filePath: string) {
+  return uploadFile<ChatMessage>(`chat/threads/${threadId}/images/`, filePath, 'image')
 }
 
 export function markChatThreadRead(threadId: string) {

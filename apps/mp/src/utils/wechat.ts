@@ -8,9 +8,9 @@ export async function getWechatLoginCode() {
     code = ''
   }
 
-  if (!code) {
-    return 'demo-wechat-login-code'
+  if (code) {
+    return code
   }
 
-  return code
+  throw new Error('未获取到微信登录凭证，请稍后重试')
 }

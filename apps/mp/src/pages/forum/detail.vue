@@ -6,7 +6,7 @@
 
     <view v-else-if="post" class="section">
       <view class="card section">
-        <text class="eyebrow">Forum Detail</text>
+        <text class="eyebrow">CampusClaw 帖子详情</text>
         <view style="height: 18rpx" />
         <text class="section-title">{{ post.title }}</text>
         <view style="height: 12rpx" />
@@ -67,7 +67,13 @@
         <view v-else class="form">
           <view class="field">
             <text class="label">发表评论</text>
-            <textarea v-model="commentBody" class="textarea" placeholder="写下你的想法、建议或补充信息" />
+            <textarea
+              v-model="commentBody"
+              class="comment-input"
+              auto-height
+              cursor-color="#f16b4f"
+              placeholder="写下你的想法、建议或补充信息"
+            />
           </view>
           <text v-if="commentError" class="error">{{ commentError }}</text>
           <button class="btn btn-primary" :disabled="submittingComment" @tap="submitComment()">
@@ -85,17 +91,26 @@
             <view style="height: 8rpx" />
             <text class="helper">{{ formatDate(comment.created_at) }}</text>
             <view v-if="hasToken" style="height: 14rpx" />
-            <view v-if="hasToken" class="action-row">
-              <button class="btn btn-ghost" size="mini" @tap="toggleReply(comment.id)">
-                {{ replyingTo === comment.id ? '收起回复框' : '回复评论' }}
+            <view v-if="hasToken" class="comment-action-row">
+              <button class="btn btn-ghost btn-small" :disabled="likingCommentId === comment.id" @tap="handleLikeComment(comment.id)">
+                {{ comment.is_liked ? '已赞' : '赞' }}{{ comment.like_count ? ` ${comment.like_count}` : '' }}
               </button>
-              <button v-if="!isMyComment(comment.author.email)" class="btn btn-ghost" size="mini" @tap="handleReportComment(comment.id)">
-                举报评论
+              <button class="btn btn-ghost btn-small" @tap="toggleReply(comment.id)">
+                {{ replyingTo === comment.id ? '收起' : '回复' }}
+              </button>
+              <button v-if="!isMyComment(comment.author.email)" class="btn btn-ghost btn-small" @tap="handleReportComment(comment.id)">
+                举报
               </button>
             </view>
 
             <view v-if="replyingTo === comment.id" class="reply-box">
-              <textarea v-model="replyBody" class="textarea" placeholder="补充你的回复内容" />
+              <textarea
+                v-model="replyBody"
+                class="comment-input reply-input"
+                auto-height
+                cursor-color="#f16b4f"
+                placeholder="补充你的回复内容"
+              />
               <text v-if="commentError" class="error">{{ commentError }}</text>
               <button class="btn btn-primary" :disabled="submittingComment" @tap="submitComment(comment.id)">
                 {{ submittingComment ? '提交中...' : '发送回复' }}
@@ -109,10 +124,15 @@
                 <text class="section-desc">{{ reply.body }}</text>
                 <view style="height: 8rpx" />
                 <text class="helper">{{ formatDate(reply.created_at) }}</text>
-                <view v-if="hasToken && !isMyComment(reply.author.email)" style="height: 12rpx" />
-                <button v-if="hasToken && !isMyComment(reply.author.email)" class="btn btn-ghost" size="mini" @tap="handleReportComment(reply.id)">
-                  举报评论
-                </button>
+                <view v-if="hasToken" style="height: 12rpx" />
+                <view v-if="hasToken" class="comment-action-row">
+                  <button class="btn btn-ghost btn-small" :disabled="likingCommentId === reply.id" @tap="handleLikeComment(reply.id)">
+                    {{ reply.is_liked ? '已赞' : '赞' }}{{ reply.like_count ? ` ${reply.like_count}` : '' }}
+                  </button>
+                  <button v-if="!isMyComment(reply.author.email)" class="btn btn-ghost btn-small" @tap="handleReportComment(reply.id)">
+                    举报
+                  </button>
+                </view>
               </view>
             </view>
           </view>
@@ -135,9 +155,10 @@ import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import type { ForumPost, UserSummary } from '../../types/api'
-import { createForumComment, deleteForumPost, fetchForumPostDetail, toggleForumPostLike } from '../../services/forum'
+import { createForumComment, deleteForumPost, fetchForumPostDetail, toggleForumCommentLike, toggleForumPostLike } from '../../services/forum'
 import { createModerationReport } from '../../services/moderation'
 import { currentUser, ensureAuthenticated, isAuthenticated, redirectToLogin } from '../../utils/auth'
+import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
@@ -145,6 +166,7 @@ const postId = ref('')
 const post = ref<ForumPost | null>(null)
 const loading = ref(false)
 const liking = ref(false)
+const likingCommentId = ref('')
 const deleting = ref(false)
 const submittingComment = ref(false)
 const commentBody = ref('')
@@ -169,7 +191,29 @@ onLoad(async (options) => {
 
 onShow(() => {
   hasToken.value = isAuthenticated.value
+  applyAssistantDraft()
 })
+
+function applyAssistantDraft() {
+  const draft = consumeAssistantDraft('/pages/forum/detail', ['forum_comment_create'])
+  if (!draft) {
+    return
+  }
+  const payload = draft.fill_payload
+  const targetPostId = typeof payload.post_id === 'string' ? payload.post_id : ''
+  if (targetPostId && targetPostId !== postId.value) {
+    return
+  }
+  const body = typeof payload.body === 'string' ? payload.body : ''
+  const parent = typeof payload.parent === 'string' ? payload.parent : ''
+  if (parent) {
+    replyingTo.value = parent
+    replyBody.value = body
+  } else {
+    commentBody.value = body
+  }
+  showToast('AI 已填入评论草稿', 'success')
+}
 
 async function loadDetail() {
   loading.value = true
@@ -207,6 +251,37 @@ async function handleLike() {
     showToast(error instanceof Error ? error.message : '点赞失败')
   } finally {
     liking.value = false
+  }
+}
+
+async function handleLikeComment(commentId: string) {
+  if (!ensureAuthenticated(`/pages/forum/detail?id=${postId.value}`)) {
+    return
+  }
+  if (!post.value) return
+
+  likingCommentId.value = commentId
+  try {
+    const result = await toggleForumCommentLike(commentId)
+    const updatedComments = post.value.comments.map(c => {
+      if (c.id === commentId) {
+        return { ...c, is_liked: result.liked, like_count: result.like_count }
+      }
+      if (c.replies) {
+        return {
+          ...c,
+          replies: c.replies.map(r =>
+            r.id === commentId ? { ...r, is_liked: result.liked, like_count: result.like_count } : r
+          )
+        }
+      }
+      return c
+    })
+    post.value = { ...post.value, comments: updatedComments }
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '点赞失败')
+  } finally {
+    likingCommentId.value = ''
   }
 }
 
@@ -360,6 +435,38 @@ function previewImages(urls: string[], current: string) {
   justify-content: space-between;
   gap: 16rpx;
   flex-wrap: wrap;
+}
+
+.comment-action-row {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.btn-small {
+  padding: 8rpx 16rpx;
+  font-size: 22rpx;
+  min-height: 0;
+  line-height: 1.2;
+}
+
+.comment-input {
+  width: 100%;
+  min-height: 76rpx;
+  max-height: 220rpx;
+  padding: 14rpx 20rpx;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  font-size: 28rpx;
+  line-height: 38rpx;
+  color: #102133;
+  caret-color: #f16b4f;
+  cursor-color: #f16b4f;
+}
+
+.reply-input {
+  background: rgba(255, 250, 245, 0.98);
 }
 
 .body-text {

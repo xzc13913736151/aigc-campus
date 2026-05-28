@@ -22,6 +22,9 @@
         <view class="status-chip">
           <text>{{ hasToken ? '已登录' : '未登录' }}</text>
         </view>
+        <view v-if="hasToken && profile.claw_id" class="status-chip claw-chip" @tap="copyClawId">
+          <text>Claw ID：{{ profile.claw_id }}</text>
+        </view>
         <view class="status-chip" :class="{ complete: profileComplete }">
           <text>{{ profileComplete ? '资料已完善' : '待补全资料' }}</text>
         </view>
@@ -64,12 +67,16 @@
 
         <view class="profile-grid">
           <view class="profile-item">
+            <text class="profile-label">Claw ID</text>
+            <text class="profile-value">{{ profile.claw_id || '未生成' }}</text>
+          </view>
+          <view class="profile-item">
             <text class="profile-label">昵称</text>
             <text class="profile-value">{{ profile.nickname || '未填写' }}</text>
           </view>
           <view class="profile-item">
             <text class="profile-label">性别</text>
-            <text class="profile-value">{{ profile.gender || '未填写' }}</text>
+            <text class="profile-value">{{ getGenderLabel(profile.gender) }}</text>
           </view>
           <view class="profile-item">
             <text class="profile-label">年级</text>
@@ -102,9 +109,8 @@
         <view class="grid action-grid">
           <button class="btn btn-secondary" @tap="goProfile">完善资料</button>
           <button class="btn btn-ghost" @tap="goForum">查看我的帖子</button>
-          <button class="btn btn-ghost" @tap="goTeammates">查看我的组队</button>
-          <button class="btn btn-ghost" @tap="goDating">查看匹配资料</button>
           <button class="btn btn-ghost" @tap="goBlocks">黑名单管理</button>
+          <button class="btn btn-ghost" @tap="goAssistant">AI 助手</button>
         </view>
       </view>
 
@@ -167,6 +173,7 @@ const teamCount = ref(0)
 const blockCount = ref(0)
 
 const profile = reactive({
+  claw_id: '',
   nickname: '',
   headline: '',
   bio: '',
@@ -223,6 +230,7 @@ onShow(async () => {
     ])
 
     avatarUrl.value = myProfile.avatar_url ?? ''
+    profile.claw_id = myProfile.user?.claw_id ?? ''
     profile.nickname = myProfile.nickname ?? ''
     profile.headline = myProfile.headline ?? ''
     profile.bio = myProfile.bio ?? ''
@@ -245,6 +253,7 @@ function resetLocalState() {
   forumCount.value = 0
   teamCount.value = 0
   blockCount.value = 0
+  profile.claw_id = ''
   profile.nickname = ''
   profile.headline = ''
   profile.bio = ''
@@ -254,8 +263,28 @@ function resetLocalState() {
   profile.interests = []
 }
 
+function getGenderLabel(value: string) {
+  const map: Record<string, string> = {
+    male: '男',
+    female: '女',
+    other: '其他',
+    unknown: '未说明',
+  }
+  return map[value] || value || '未填写'
+}
+
 function goLogin() {
   redirectToLogin('/pages/me/index')
+}
+
+function copyClawId() {
+  if (!profile.claw_id) {
+    return
+  }
+  uni.setClipboardData({
+    data: profile.claw_id,
+    success: () => showToast('Claw ID 已复制', 'success'),
+  })
 }
 
 function goProfile() {
@@ -280,12 +309,15 @@ function goForum() {
   uni.switchTab({ url: '/pages/forum/index' })
 }
 
-function goTeammates() {
-  navigateTo('/pages/teammates/index')
-}
-
-function goDating() {
-  navigateTo('/pages/dating/index')
+function goAssistant() {
+  if (!hasToken.value) {
+    redirectToLogin('/pages/assistant/index')
+    return
+  }
+  if (!ensureAuthenticated('/pages/assistant/index')) {
+    return
+  }
+  navigateTo('/pages/assistant/index')
 }
 
 async function logout() {
@@ -352,6 +384,11 @@ async function logout() {
 .status-chip.complete {
   background: rgba(77, 166, 106, 0.16);
   color: #2e7d49;
+}
+
+.claw-chip {
+  background: rgba(241, 107, 79, 0.12);
+  color: #f16b4f;
 }
 
 .summary-grid {

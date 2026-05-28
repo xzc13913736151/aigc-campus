@@ -1,7 +1,7 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Access</text>
+      <text class="eyebrow">CampusClaw 登录入口</text>
       <view style="height: 18rpx" />
       <text class="title">小程序端不再单独提供注册表单，统一通过微信登录进入。</text>
       <view style="height: 18rpx" />

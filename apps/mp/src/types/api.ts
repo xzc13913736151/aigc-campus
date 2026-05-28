@@ -1,5 +1,6 @@
 export type UserSummary = {
   id: string
+  claw_id: string
   email: string
   full_name: string
   nickname: string
@@ -8,6 +9,15 @@ export type UserSummary = {
   email_verified_at: string | null
   created_at: string
   updated_at: string
+}
+
+export type ContactSearchUser = {
+  id: string
+  claw_id: string
+  nickname: string
+  full_name: string
+  headline: string
+  avatar_url: string
 }
 
 export type LoginResponse = {
@@ -42,6 +52,7 @@ export type TeamPost = {
   bump_score: number
   bumped_at: string
   author: {
+    id: string
     email: string
     nickname: string
     full_name: string
@@ -65,6 +76,8 @@ export type ForumComment = {
   author: UserSummary
   parent: string | null
   body: string
+  like_count: number
+  is_liked: boolean
   replies: ForumComment[]
   created_at: string
 }
@@ -150,6 +163,8 @@ export type DatingProfile = {
   nickname: string
   gender: 'unknown' | 'male' | 'female' | 'other'
   height_cm: number | null
+  weight_kg: number | null
+  age: number | null
   interests: string[]
   personality_type: string
   bio: string
@@ -162,6 +177,10 @@ export type DatingPreference = {
   preferred_genders: Array<'unknown' | 'male' | 'female' | 'other'>
   min_height_cm: number | null
   max_height_cm: number | null
+  min_weight_kg: number | null
+  max_weight_kg: number | null
+  min_age: number | null
+  max_age: number | null
   preferred_interests: string[]
   preferred_personality_types: string[]
   updated_at: string
@@ -181,6 +200,7 @@ export type ChatMessage = {
   id: string
   sender: UserSummary
   body: string
+  image_url: string
   is_read: boolean
   read_at: string | null
   is_withdrawn: boolean
@@ -208,6 +228,32 @@ export type AssistantMessage = {
   updated_at: string
 }
 
+export type AssistantActionProposal = {
+  id: string
+  kind:
+    | 'forum_post_create'
+    | 'forum_comment_create'
+    | 'forum_post_like'
+    | 'forum_comment_like'
+    | 'team_post_create'
+    | 'team_apply'
+    | 'trade_post_create'
+    | 'trade_favorite'
+    | 'dating_profile_update'
+    | 'dating_preference_update'
+    | 'dating_signal'
+    | 'chat_message_send'
+    | 'profile_update'
+  title: string
+  target_page: string
+  preview: Record<string, unknown>
+  fill_payload: Record<string, unknown>
+  status: 'pending' | 'executed' | 'dismissed' | 'expired'
+  expires_at: string
+  created_at: string
+  updated_at: string
+}
+
 export type AssistantSession = {
   id: string
   title: string
@@ -224,4 +270,14 @@ export type AssistantReplyResponse = {
   user_message: AssistantMessage
   assistant_message: AssistantMessage
   session: AssistantSession
+  actions: AssistantActionProposal[]
+}
+
+export type AssistantActionExecuteResponse = {
+  action: AssistantActionProposal
+  result: {
+    target_page?: string
+    message?: string
+    [key: string]: unknown
+  }
 }

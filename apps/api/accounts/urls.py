@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     CurrentUserAPIView,
+    ContactSearchAPIView,
     EmailCodeRequestAPIView,
     LogoutAPIView,
     PairUpTokenObtainPairView,
@@ -19,4 +20,5 @@ urlpatterns = [
     path("refresh/", PairUpTokenRefreshView.as_view(), name="refresh"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),
     path("me/", CurrentUserAPIView.as_view(), name="current-user"),
+    path("contacts/search/", ContactSearchAPIView.as_view(), name="contact-search"),
 ]

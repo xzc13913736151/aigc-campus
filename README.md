@@ -1,185 +1,387 @@
-# PairUp
+# CampusClaw - 校园交友与协作平台
 
-PairUp 目前聚焦于一个客户端：微信小程序。
+CampusClaw 是一个基于微信小程序的校园交友与协作平台，支持论坛、组队匹配、恋爱匹配、交易匹配等功能。
 
-## 仓库结构
+## 目录
 
-- `apps/api`：Django 后端 API、业务逻辑、Django Admin
-- `apps/mp`：基于 uni-app + Vue 3 的微信小程序
-- `docs/`：架构说明、开发记录、功能规划
+- [一、先决条件](#一先决条件)
+- [二、后端启动](#二后端启动)
+- [三、小程序前端启动](#三小程序前端启动)
+- [四、微信开发者工具配置](#四微信开发者工具配置)
+- [五、验证功能是否正常](#五验证功能是否正常)
+- [六、常见问题](#六常见问题)
 
-## 技术栈
-
-- 后端：Django 5.2、Django REST framework、SimpleJWT、Channels
-- 数据：SQLite（本地可直接跑）/ PostgreSQL、Redis
-- 客户端：uni-app、Vue 3、TypeScript
+---
 
 ## 一、先决条件
 
-本地建议具备：
+开始之前，你需要安装以下软件：
 
-- Python 3.12
-- Node.js 20+ 或更高
-- 微信开发者工具
+### 1.1 Python 3.12+
 
-当前项目在 Windows PowerShell 下，`pnpm / npm / npx` 可能会被 `.ps1` 执行策略拦住。  
-如果你看到“禁止运行脚本”之类报错，请统一改用 `cmd /c ...` 方式执行。
+官网下载：https://www.python.org/downloads/
+
+安装时**务必勾选** "Add Python to PATH"
+
+验证安装：
+
+```powershell
+python --version
+```
+
+### 1.2 Node.js 20+
+
+官网下载：https://nodejs.org/
+
+验证安装：
+
+```powershell
+node -v
+npm -v
+```
+
+### 1.3 Anaconda（推荐）
+
+官网下载：https://www.anaconda.com/download
+
+创建项目环境：
+
+```powershell
+conda create -n pairup python=3.12 -y
+conda activate pairup
+```
+
+### 1.4 微信开发者工具
+
+官网下载：https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html
+
+### 1.5 Git（可选）
+
+官网下载：https://git-scm.com/download/win
+
+---
 
 ## 二、后端启动
 
-如果你已经有 conda 环境，例如 `aigc`，可以直接使用。
+### 2.1 安装后端依赖
 
-在项目根目录进入后端目录：
+**方式一：使用 conda 环境（推荐）**
 
 ```powershell
+# 激活 conda 环境
 conda activate aigc
+
+# 进入后端目录
 cd apps/api
+
+# 安装依赖
+pip install django djangorestframework djangorestframework-simplejwt django-cors-headers channels channels-redis drf-spectacular Pillow dj-database-url psycopg2-binary redis django-filter
+
+# 安装 ASGI 服务器（用于实时推送，必须）
+pip install daphne
 ```
 
-先给 Django 设置本地开发环境变量：
+**方式二：直接安装（如果没有 conda）**
 
 ```powershell
+cd apps/api
+pip install -r requirements.txt
+pip install daphne
+```
+
+### 2.2 创建数据库（首次需要）
+
+```powershell
+cd apps/api
+
+# 设置环境变量（Windows PowerShell）
 $env:DEBUG='1'
 $env:SECRET_KEY='pairup-local-dev-secret'
-```
 
-然后执行迁移并启动：
-
-```powershell
+# 创建数据库表
 python manage.py migrate
-python manage.py runserver
-```
 
-如果你需要创建管理员账号：
-
-```powershell
+# 可选：创建管理员账号
 python manage.py createsuperuser
 ```
 
-后端启动后常用地址：
+### 2.3 启动后端服务
 
-- API 根地址：`http://127.0.0.1:8000/api/v1/`
-- Swagger 文档：`http://127.0.0.1:8000/api/docs/`
-- Django Admin：`http://127.0.0.1:8000/admin/`
-
-## 三、可选基础设施
-
-如果你想启用 PostgreSQL 和 Redis，而不是本地 SQLite / 内存通道，可在项目根目录执行：
+#### 方式一：普通模式（无实时推送，推荐新手）
 
 ```powershell
-docker compose up -d db redis
+cd apps/api
+$env:DEBUG='1'
+$env:SECRET_KEY='pairup-local-dev-secret'
+python manage.py runserver
 ```
 
-说明：
+启动成功后访问：
 
-- 不启动 Docker 也可以先本地看效果
-- 当前 Django 在未配置 PostgreSQL 时会自动退回 SQLite
-- 当前 Channels 在未配置 Redis 时会自动退回内存通道
+- API 地址：http://127.0.0.1:8000/api/v1/
+- Swagger 文档：http://127.0.0.1:8000/api/docs/
+- Django Admin：http://127.0.0.1:8000/admin/
 
-## 四、小程序启动
+#### 方式二：ASGI 模式（支持实时推送，必须）
 
-### 1. 安装依赖
+**为什么要开这个？**
 
-在项目根目录执行：
+- 实时聊天消息推送
+- 实时通知
+- 正在输入提示
+- 在线状态显示
 
 ```powershell
+cd apps/api
+$env:DEBUG='1'
+$env:SECRET_KEY='pairup-local-dev-secret'
+daphne -b 0.0.0.0 -p 8000 config.asgi:application
+```
+
+> **注意**：两种方式不能同时运行，端口都是 8000。
+
+---
+
+## 三、小程序前端启动
+
+### 3.1 安装前端依赖
+
+```powershell
+# 在项目根目录（不是 apps/mp）
 cmd /c corepack enable
 cmd /c corepack pnpm install
 ```
 
-如果你只是想验证 Node 工具链是否正常，也可以先试：
+### 3.2 构建小程序
+
+uni-app 有两种构建模式：
+
+| 模式     | 命令              | 产物目录               | 用途             |
+| -------- | ----------------- | ---------------------- | ---------------- |
+| 开发模式 | `dev:mp-weixin`   | `dist/dev/mp-weixin`   | 热重载，方便调试 |
+| 生产模式 | `build:mp-weixin` | `dist/build/mp-weixin` | 压缩混淆，体积小 |
 
 ```powershell
-cmd /c node -v
-cmd /c npm -v
-```
-
-### 2. 启动微信小程序开发构建
-
-在项目根目录执行：
-
-```powershell
+# 开发模式（推荐，日常开发用）
 cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
+
+# 生产模式（发布时用）
+cmd /c corepack pnpm --dir apps/mp build:mp-weixin
 ```
 
-也可以使用根目录脚本：
+---
 
-```powershell
-cmd /c corepack pnpm dev:mp
+## 四、微信开发者工具配置
+
+### 4.1 打开项目
+
+1. 打开微信开发者工具
+2. 点击"导入项目"
+3. 选择目录：
+   - 开发模式：`apps/mp/dist/dev/mp-weixin`
+   - 生产模式：`apps/mp/dist/build/mp-weixin`
+4. AppID 填你的小程序 AppID（测试号也可以）
+
+### 4.2 重要配置
+
+在微信开发者工具中：
+
+1. **勾选"不校验合法域名"**（开发环境用）
+   - 设置 → 详情 → 本地设置 → 勾选
+
+2. **勾选"关闭域名校验"**（如果遇到问题）
+   - 设置 → 通用设置 → 勾选
+
+### 4.3 刷新最新代码
+
+如果你改了代码但小程序没更新：
+
+1. 确认运行的构建命令：
+   - 运行 `dev:mp-weixin` → 打开 `dist/dev/mp-weixin`
+   - 运行 `build:mp-weixin` → 打开 `dist/build/mp-weixin`
+
+2. 在微信开发者工具中点击"编译"按钮
+
+3. 如果还不行，清除缓存：
+   - 工具 → 清除缓存 → 全部清除
+   - 然后重新编译
+
+---
+
+## 五、验证功能是否正常
+
+后端和小程序都启动后，测试以下地址：
+
+### 5.1 后端 API 测试
+
+在浏览器或 Postman 访问：
+
+```
+GET http://127.0.0.1:8000/api/v1/forum/posts/
 ```
 
-### 3. 微信开发者工具导入目录
+如果返回帖子列表，说明后端正常。
 
-构建成功后，把下面这个目录导入微信开发者工具：
+### 5.2 小程序测试
 
-```text
-apps/mp/dist/dev/mp-weixin
-```
+1. 登录微信小程序
+2. 进入"论坛"页面，看帖子列表
+3. 进入"匹配" tab，选择任意匹配类型
+4. 进入"我的"页面，确认登录状态
 
-如果用绝对路径，就是：
-
-```text
-C:\Users\Lenovo\Desktop\aigc\aigc-campus-main\apps\mp\dist\dev\mp-weixin
-```
-
-注意区分：
-
-- 小程序源码目录：`apps/mp`
-- 微信开发者工具实际要打开的目录：`apps/mp/dist/dev/mp-weixin`
-
-## 五、当前建议体验页面
-
-导入小程序后，优先看这些页面：
-
-- `/pages/auth/login`：微信登录
-- `/pages/profile/index`：首次登录资料补全
-- `/pages/messages/index`：消息中心
-- `/pages/chat/index`：聊天页
-- `/pages/forum/index`：论坛列表
-- `/pages/forum/detail`：帖子详情、评论、举报
-- `/pages/dating/index`：匹配、举报、拉黑
-- `/pages/admin/index`：管理员举报处理页
+---
 
 ## 六、常见问题
 
-### 1. `pnpm` 找不到
+### Q1: `pnpm` 命令找不到
 
-如果 PowerShell 提示：
-
-- `pnpm 无法识别`
-- `npm.ps1 / npx.ps1 / pnpm.ps1 被禁止执行`
-
-请不要直接输入 `pnpm ...`，改成：
+Windows PowerShell 报错 "pnpm 无法识别"，改用：
 
 ```powershell
 cmd /c corepack pnpm install
 cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
 ```
 
-### 2. `createsuperuser` 报 `Set SECRET_KEY when DEBUG is False`
+### Q2: `python` 命令找不到
 
-说明当前终端里还没设置开发环境变量。先执行：
+说明 Python 没添加到 PATH，重装 Python 时勾选 "Add Python to PATH"。
+
+或者用完整路径：
 
 ```powershell
+C:\Users\你的用户名\AppData\Local\Programs\Python\Python312\python.exe
+```
+
+### Q3: `pip` 命令找不到
+
+```powershell
+python -m pip install xxx
+```
+
+### Q4: `daphne` 安装失败
+
+```powershell
+pip install daphne
+```
+
+如果网络不行，用国内镜像：
+
+```powershell
+pip install daphne -i https://pypi.tuna.tsinghua.edu.cn/simple
+```
+
+### Q5: 数据库报错 "no such table"
+
+需要先迁移数据库：
+
+```powershell
+cd apps/api
+python manage.py migrate
+```
+
+### Q6: WebSocket 连接失败（`ws://127.0.0.1:8000/ws/...`）
+
+这是正常的，如果你没启动 ASGI 服务器（daphne）。**不影响发帖、匹配等核心功能**。
+
+只是聊天不会有实时推送，需要手动刷新。
+
+如果需要实时功能，启动时用：
+
+```powershell
+daphne -b 0.0.0.0 -p 8000 config.asgi:application
+```
+
+### Q7: 头像不显示（HTTP 警告）
+
+微信要求 HTTPS，本地开发时可以用 HTTP，不影响功能。
+
+### Q8: 修改代码后小程序没变化
+
+1. 确认构建命令和打开的目录是否匹配
+2. 点击微信开发者工具的"编译"按钮
+3. 清除缓存：工具 → 清除缓存 → 全部清除
+
+### Q9: 微信登录不了
+
+需要配置真实的微信小程序 AppID：
+
+- 小程序端：`apps/mp/src/manifest.json`
+- 后端：`.env` 文件中的 `WECHAT_MINIAPP_APPID` 和 `WECHAT_MINIAPP_SECRET`
+
+没有真实 AppID 的话，可以用测试号体验部分功能。
+
+---
+
+## 快速启动命令汇总
+
+### 完整启动（带实时推送）
+
+```powershell
+# 终端 1：后端（带实时推送）
+cd apps/api
 $env:DEBUG='1'
 $env:SECRET_KEY='pairup-local-dev-secret'
+daphne -b 0.0.0.0 -p 8000 config.asgi:application
+
+# 终端 2：前端
+cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
+
+# 终端 3：打开微信开发者工具，导入 dist/dev/mp-weixin 目录
 ```
 
-再执行：
+### 简化启动（无实时推送）
 
 ```powershell
-python manage.py createsuperuser
+# 终端 1：后端
+cd apps/api
+$env:DEBUG='1'
+$env:SECRET_KEY='pairup-local-dev-secret'
+python manage.py runserver
+
+# 终端 2：前端
+cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
+
+# 微信开发者工具导入 dist/dev/mp-weixin
 ```
 
-### 3. 微信登录是否必须配置真实 AppID
+---
 
-如果你要完整验证真实微信登录链路，需要你自己的小程序 `AppID` 和微信后台配置。  
-如果只是先看页面效果、资料补全、论坛、匹配、聊天和管理台等功能，可以先把前后端跑起来再继续调。
+## 项目结构
 
-## 七、补充说明
+```
+aigc-campus-main/
+├── apps/
+│   ├── api/              # Django 后端
+│   │   ├── accounts/     # 用户账户
+│   │   ├── assistant/    # AI 助手
+│   │   ├── chat/        # 聊天
+│   │   ├── common/      # 公共模型
+│   │   ├── dating/      # 恋爱匹配
+│   │   ├── forum/      # 论坛
+│   │   ├── moderation/  # 内容审核
+│   │   ├── notifications/  # 通知
+│   │   ├── profiles/    # 用户资料
+│   │   ├── teammates/   # 组队匹配
+│   │   ├── trade/       # 交易匹配
+│   │   └── config/     # 配置
+│   └── mp/              # 微信小程序前端
+│       └── src/
+│           ├── pages/  # 页面
+│           ├── components/  # 组件
+│           ├── services/    # API 服务
+│           └── utils/       # 工具
+├── docs/                # 文档
+└── docker-compose.yml   # Docker 配置
+```
 
-- `node_modules/` 是前端依赖目录，删掉后可通过重新安装恢复
-- `docs/` 存放的是功能清单、架构说明、ADR 和开发过程文档
-- 更多功能现状可查看：
-  - `docs/待实现功能清单.md`
-  - `docs/后端待实现功能清单.md`
+## 技术栈
+
+- **后端**：Django 5.2、Django REST framework、SimpleJWT、Channels
+- **数据库**：SQLite（开发）/ PostgreSQL（生产）
+- **实时通信**：Django Channels + WebSocket
+- **前端**：uni-app、Vue 3、TypeScript
+- **小程序**：微信小程序
+
+---
+
+有任何问题欢迎提交 Issue！

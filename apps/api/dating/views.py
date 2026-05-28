@@ -39,13 +39,22 @@ def calculate_match_score(profile: DatingProfile, preference: DatingPreference |
         min_height_ok = preference.min_height_cm is None or profile.height_cm >= preference.min_height_cm
         max_height_ok = preference.max_height_cm is None or profile.height_cm <= preference.max_height_cm
         if min_height_ok and max_height_ok:
-            score += 20
+            score += 15
 
-    if not preference.preferred_personality_types or profile.personality_type in preference.preferred_personality_types:
-        score += 20
+    if profile.weight_kg is not None:
+        min_weight_ok = preference.min_weight_kg is None or profile.weight_kg >= preference.min_weight_kg
+        max_weight_ok = preference.max_weight_kg is None or profile.weight_kg <= preference.max_weight_kg
+        if min_weight_ok and max_weight_ok:
+            score += 10
+
+    if profile.age is not None:
+        min_age_ok = preference.min_age is None or profile.age >= preference.min_age
+        max_age_ok = preference.max_age is None or profile.age <= preference.max_age
+        if min_age_ok and max_age_ok:
+            score += 10
 
     overlap = len(set(profile.interests) & set(preference.preferred_interests))
-    score += min(overlap * 10, 35)
+    score += min(overlap * 10, 40)
 
     return min(score, 100)
 

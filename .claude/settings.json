@@ -3,7 +3,12 @@
     "allow": [
       "Bash(node -e \"const fs=require\\('fs'\\); const path='c:/Users/Lenovo/Desktop/aigc/aigc-campus-main/node_modules/.pnpm/@dcloudio+vite-plugin-uni@3_2dbe892732195d138b494a9a333b274c/node_modules/@dcloudio/vite-plugin-uni/dist/cli/build.js'; const s=fs.readFileSync\\(path,'utf8'\\); const i=s.indexOf\\('build\\('\\); console.log\\(s.slice\\(0,4000\\)\\)\")",
       "Bash(pnpm --dir \"c:\\\\Users\\\\Lenovo\\\\Desktop\\\\aigc\\\\aigc-campus-main\\\\apps\\\\mp\" build:mp-weixin)",
-      "Bash(pnpm --dir \"c:/Users/Lenovo/Desktop/aigc/aigc-campus-main/apps/mp\" build:mp-weixin)"
+      "Bash(pnpm --dir \"c:/Users/Lenovo/Desktop/aigc/aigc-campus-main/apps/mp\" build:mp-weixin)",
+      "Bash(python manage.py makemigrations trade --name initial)",
+      "Bash(python -m django makemigrations trade --name initial)",
+      "Bash(python manage.py makemigrations trade)",
+      "Bash(python -c \"from trade.models import TradePost; print\\('OK'\\)\")",
+      "Bash(DEBUG=1 SECRET_KEY='pairup-local-dev-secret' python manage.py makemigrations trade)"
     ]
   }
 }

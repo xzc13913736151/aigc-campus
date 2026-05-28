@@ -25,7 +25,8 @@ class ChatThread(UUIDTimeStampedModel):
 class ChatMessage(UUIDTimeStampedModel):
     thread = models.ForeignKey(ChatThread, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_chat_messages")
-    body = models.TextField()
+    body = models.TextField(blank=True)
+    image = models.ImageField(upload_to="chat/messages/%Y/%m/%d/", null=True, blank=True)
     is_read = models.BooleanField(default=False)
     read_at = models.DateTimeField(null=True, blank=True)
     is_withdrawn = models.BooleanField(default=False)

@@ -1,4 +1,4 @@
-import type { LoginResponse, UserSummary } from '../types/api'
+import type { ContactSearchUser, LoginResponse, UserSummary } from '../types/api'
 import { request } from '../utils/request'
 
 export function wechatLogin(code: string) {
@@ -11,4 +11,8 @@ export function wechatLogin(code: string) {
 
 export function fetchCurrentUser() {
   return request<UserSummary>('auth/me/')
+}
+
+export function searchContacts(keyword: string) {
+  return request<ContactSearchUser[]>(`auth/contacts/search/?q=${encodeURIComponent(keyword)}`)
 }

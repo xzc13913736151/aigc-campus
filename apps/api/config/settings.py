@@ -1,6 +1,7 @@
 from datetime import timedelta
 import os
 from pathlib import Path
+import sys
 
 import dj_database_url
 from django.core.exceptions import ImproperlyConfigured
@@ -86,6 +87,7 @@ INSTALLED_APPS = [
     "moderation",
     "chat",
     "notifications",
+    "trade",
 ]
 
 MIDDLEWARE = [
@@ -224,7 +226,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 REDIS_URL = os.getenv("REDIS_URL")
-USE_INMEMORY_CHANNEL_LAYER = env_bool("USE_INMEMORY_CHANNEL_LAYER", default=False)
+USE_INMEMORY_CHANNEL_LAYER = env_bool("USE_INMEMORY_CHANNEL_LAYER", default=False) or any("pytest" in arg for arg in sys.argv)
 if REDIS_URL and not USE_INMEMORY_CHANNEL_LAYER:
     CHANNEL_LAYERS = {
         "default": {

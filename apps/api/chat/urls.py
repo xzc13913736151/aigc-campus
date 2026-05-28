@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    ChatImageMessageCreateAPIView,
     ChatMessageListCreateAPIView,
     ChatMessageWithdrawAPIView,
     ChatThreadHideAPIView,
@@ -12,6 +13,7 @@ from .views import (
 urlpatterns = [
     path("threads/", ChatThreadListCreateAPIView.as_view(), name="chat-thread-list"),
     path("threads/<uuid:thread_id>/messages/", ChatMessageListCreateAPIView.as_view(), name="chat-message-list"),
+    path("threads/<uuid:thread_id>/images/", ChatImageMessageCreateAPIView.as_view(), name="chat-image-message-create"),
     path("threads/<uuid:thread_id>/messages/<uuid:message_id>/withdraw/", ChatMessageWithdrawAPIView.as_view(), name="chat-message-withdraw"),
     path("threads/<uuid:thread_id>/mark-read/", ChatThreadMarkReadAPIView.as_view(), name="chat-thread-mark-read"),
     path("threads/<uuid:thread_id>/hide/", ChatThreadHideAPIView.as_view(), name="chat-thread-hide"),

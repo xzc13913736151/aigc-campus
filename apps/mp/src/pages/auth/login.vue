@@ -1,7 +1,7 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Access</text>
+      <text class="eyebrow">CampusClaw 登录</text>
       <view style="height: 18rpx" />
       <text class="title">使用微信一键登录，几秒内进入 CampusClaw。</text>
       <view style="height: 18rpx" />
@@ -29,7 +29,7 @@
         <button class="btn btn-primary" :disabled="submitting" @tap="handleLogin">
           {{ submitting ? '登录中...' : '使用微信一键登录' }}
         </button>
-        <text class="helper">本地 demo 会自动使用开发登录；配置微信 AppID 和 Secret 后会切换为真实微信登录。</text>
+        <text class="helper">如果登录失败，请确认小程序 AppID 与后端微信配置一致后再重试。</text>
       </view>
     </view>
   </view>

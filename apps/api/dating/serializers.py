@@ -10,14 +10,26 @@ class DatingProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DatingProfile
-        fields = ("id", "user", "nickname", "gender", "height_cm", "interests", "personality_type", "bio", "is_visible", "updated_at")
+        fields = ("id", "user", "nickname", "gender", "height_cm", "weight_kg", "age", "interests", "personality_type", "bio", "is_visible", "updated_at")
         read_only_fields = ("id", "user", "updated_at")
 
 
 class DatingPreferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = DatingPreference
-        fields = ("id", "preferred_genders", "min_height_cm", "max_height_cm", "preferred_interests", "preferred_personality_types", "updated_at")
+        fields = (
+            "id",
+            "preferred_genders",
+            "min_height_cm",
+            "max_height_cm",
+            "min_weight_kg",
+            "max_weight_kg",
+            "min_age",
+            "max_age",
+            "preferred_interests",
+            "preferred_personality_types",
+            "updated_at",
+        )
         read_only_fields = ("id", "updated_at")
 
 

@@ -2,7 +2,7 @@
   <view class="container">
     <view class="card">
       <view class="section">
-        <text class="eyebrow">{{ isEditing ? 'Edit Post' : 'Create Post' }}</text>
+        <text class="eyebrow">{{ isEditing ? 'CampusClaw 编辑帖子' : 'CampusClaw 发布帖子' }}</text>
         <view style="height: 18rpx" />
         <text class="title">
           {{ isEditing ? '继续完善你的帖子内容，让表达更清楚、互动更顺畅。' : '把你的想法、求助、经验或招募内容发到论坛里。' }}
@@ -118,6 +118,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import { createForumPost, fetchForumPostDetail, updateForumPost, uploadForumPostImage } from '../../services/forum'
+import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
@@ -156,10 +157,31 @@ onShow(() => {
     resetTransientState()
   }
   hasToken.value = isLoggedIn()
+  applyAssistantDraft()
   if (!hasToken.value) {
     redirectToLogin(getEditorUrl())
   }
 })
+
+function applyAssistantDraft() {
+  if (postId.value) {
+    return
+  }
+  const draft = consumeAssistantDraft('/pages/forum/create', ['forum_post_create'])
+  if (!draft) {
+    return
+  }
+  const payload = draft.fill_payload
+  form.title = typeof payload.title === 'string' ? payload.title : form.title
+  form.body = typeof payload.body === 'string' ? payload.body : form.body
+  form.category = typeof payload.category === 'string' ? payload.category : form.category
+  if (Array.isArray(payload.tags)) {
+    form.tagsText = payload.tags.map(String).join(', ')
+  } else if (typeof payload.tags === 'string') {
+    form.tagsText = payload.tags
+  }
+  showToast('AI 已填入帖子草稿', 'success')
+}
 
 function resetTransientState() {
   submitting.value = false
@@ -476,7 +498,7 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 88rpx;
+  line-height: 1;
 }
 
 .editor-button::after {
@@ -492,7 +514,7 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
   display: block;
   font-size: 28rpx;
   font-weight: 700;
-  line-height: 88rpx;
+  line-height: 1;
   white-space: nowrap;
 }
 

@@ -13,11 +13,19 @@ User = get_user_model()
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     sender = UserSerializer(read_only=True)
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatMessage
-        fields = ("id", "sender", "body", "is_read", "read_at", "is_withdrawn", "withdrawn_at", "created_at", "updated_at")
-        read_only_fields = ("id", "sender", "is_read", "read_at", "is_withdrawn", "withdrawn_at", "created_at", "updated_at")
+        fields = ("id", "sender", "body", "image_url", "is_read", "read_at", "is_withdrawn", "withdrawn_at", "created_at", "updated_at")
+        read_only_fields = ("id", "sender", "image_url", "is_read", "read_at", "is_withdrawn", "withdrawn_at", "created_at", "updated_at")
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return ""
+        request = self.context.get("request")
+        url = obj.image.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class ChatThreadSerializer(serializers.ModelSerializer):
@@ -77,6 +85,10 @@ class ChatMessageCreateSerializer(serializers.ModelSerializer):
         if len(value) < 1:
             raise serializers.ValidationError("Message body is required.")
         return value
+
+
+class ChatImageMessageCreateSerializer(serializers.Serializer):
+    image = serializers.ImageField()
 
 
 class ChatMarkReadSerializer(serializers.Serializer):

@@ -1,23 +1,9 @@
 <template>
   <view class="container">
     <view class="section hero">
-      <text class="eyebrow">CampusClaw Dating</text>
+      <text class="eyebrow">CampusClaw 恋爱匹配</text>
       <view style="height: 18rpx" />
-      <text class="title">先把自己说清楚，再去认识那些和你可能聊得来的人。</text>
-      <view style="height: 18rpx" />
-      <text class="subtitle">
-        这一页把资料、偏好、候选人和匹配结果收在一起。你可以先完善展示信息，再决定喜欢、跳过、举报或拉黑。
-      </text>
-      <view style="height: 24rpx" />
-
-      <view class="status-row">
-        <view class="status-chip" :class="{ active: hasToken }">
-          <text>{{ hasToken ? '已登录' : '未登录' }}</text>
-        </view>
-        <view class="status-chip" :class="{ complete: profileComplete }">
-          <text>{{ profileComplete ? '基础资料已完成' : '请先补全基础资料' }}</text>
-        </view>
-      </view>
+      <text class="title">先把自己说清楚，再遇见聊得来的人。</text>
     </view>
 
     <view v-if="!hasToken" class="card empty">
@@ -52,33 +38,74 @@
       </view>
 
       <view class="card section">
-        <text class="section-title">我的展示资料</text>
-        <view style="height: 10rpx" />
-        <text class="section-desc">这部分决定别人看到你的第一印象，也会影响候选人排序。</text>
+        <view class="section-head">
+          <view>
+            <text class="section-title">我的展示资料</text>
+            <view style="height: 10rpx" />
+            <text class="section-desc">这部分决定别人看到你的第一印象，也会影响候选人排序。</text>
+          </view>
+          <button v-if="!profileEditorOpen" class="btn btn-ghost" size="mini" @tap="openProfileEditor">
+            修改资料
+          </button>
+        </view>
         <view style="height: 20rpx" />
 
-        <view class="form">
+        <view v-if="!profileEditorOpen" class="profile-summary">
+          <view>
+            <text class="candidate-name">{{ profileForm.nickname || '还没有填写展示昵称' }}</text>
+            <view style="height: 8rpx" />
+            <text class="helper">
+              {{ getProfileMeta() }} · {{ profileForm.is_visible ? '公开展示' : '暂不公开' }}
+            </text>
+          </view>
+          <view v-if="splitList(profileForm.interestsText).length" class="tag-row">
+            <text v-for="tag in splitList(profileForm.interestsText)" :key="tag" class="tag">{{ tag }}</text>
+          </view>
+          <text class="section-desc">{{ profileForm.bio || '还没有填写自我介绍。' }}</text>
+        </view>
+
+        <view v-else class="form">
           <view class="field">
             <text class="label">展示昵称</text>
             <input v-model="profileForm.nickname" class="input" type="text" placeholder="别人看到你的名字" />
           </view>
           <view class="field">
             <text class="label">性别</text>
-            <picker :range="genderOptions" :value="profileGenderIndex" @change="handleProfileGenderChange">
+            <picker :range="genderOptionLabels" :value="profileGenderIndex" @change="handleProfileGenderChange">
               <view class="input">{{ getGenderLabel(profileForm.gender) }}</view>
             </picker>
           </view>
           <view class="field">
             <text class="label">身高（cm）</text>
-            <input v-model="profileForm.height_cm" class="input" type="number" placeholder="例如 170" />
+            <view class="height-row">
+              <input
+                v-model="profileForm.height_cm"
+                class="input height-input"
+                type="digit"
+                placeholder="例如 170.5"
+                :disabled="profileForm.height_private"
+              />
+              <button
+                class="height-toggle"
+                :class="{ active: profileForm.height_private }"
+                size="mini"
+                @tap="toggleHeightPrivate"
+              >
+                不便透露
+              </button>
+            </view>
+          </view>
+          <view class="field">
+            <text class="label">体重（kg）</text>
+            <input v-model="profileForm.weight_kg" class="input" type="digit" placeholder="例如 55.5，可不填" />
+          </view>
+          <view class="field">
+            <text class="label">年龄</text>
+            <input v-model="profileForm.age" class="input" type="number" placeholder="例如 20，可不填" />
           </view>
           <view class="field">
             <text class="label">兴趣标签</text>
             <input v-model="profileForm.interestsText" class="input" type="text" placeholder="摄影, Citywalk, AI, 电影" />
-          </view>
-          <view class="field">
-            <text class="label">人格类型</text>
-            <input v-model="profileForm.personality_type" class="input" type="text" placeholder="例如 INFP / ENTP" />
           </view>
           <view class="field">
             <text class="label">自我介绍</text>
@@ -103,15 +130,33 @@
       </view>
 
       <view class="card section">
-        <text class="section-title">匹配偏好</text>
-        <view style="height: 10rpx" />
-        <text class="section-desc">先用轻量配置表达偏好，后面我们还可以继续升级成更完整的问答方式。</text>
+        <view class="section-head">
+          <view>
+            <text class="section-title">匹配偏好</text>
+            <view style="height: 10rpx" />
+            <text class="section-desc">先用轻量配置表达偏好，后面我们还可以继续升级成更完整的问答方式。</text>
+          </view>
+          <button v-if="!preferenceEditorOpen" class="btn btn-ghost" size="mini" @tap="openPreferenceEditor">
+            修改偏好
+          </button>
+        </view>
         <view style="height: 20rpx" />
 
-        <view class="form">
+        <view v-if="!preferenceEditorOpen" class="profile-summary">
+          <text class="candidate-name">当前偏好：{{ getPreferenceGenderSummary() }}</text>
+          <text class="helper">{{ getPreferenceRangeSummary() }}</text>
+          <view v-if="splitList(preferenceForm.preferredInterestsText).length" class="tag-row">
+            <text v-for="tag in splitList(preferenceForm.preferredInterestsText)" :key="tag" class="tag">{{ tag }}</text>
+          </view>
+          <text v-else class="section-desc">还没有填写偏好兴趣，可以点击“修改偏好”补充。</text>
+        </view>
+
+        <view v-else class="form">
           <view class="field">
             <text class="label">偏好性别</text>
-            <input v-model="preferenceForm.preferredGendersText" class="input" type="text" placeholder="male, female, other, unknown" />
+            <picker :range="genderPreferenceLabels" :value="preferredGenderPickerIndex" @change="handlePreferredGenderChange">
+              <view class="input">{{ preferredGenderLabel }}</view>
+            </picker>
           </view>
           <view class="field">
             <text class="label">最低身高（cm）</text>
@@ -122,12 +167,24 @@
             <input v-model="preferenceForm.max_height_cm" class="input" type="number" placeholder="可不填" />
           </view>
           <view class="field">
-            <text class="label">偏好兴趣</text>
-            <input v-model="preferenceForm.preferredInterestsText" class="input" type="text" placeholder="音乐, 运动, 阅读, 旅行" />
+            <text class="label">最低体重（kg）</text>
+            <input v-model="preferenceForm.min_weight_kg" class="input" type="digit" placeholder="可不填" />
           </view>
           <view class="field">
-            <text class="label">偏好人格类型</text>
-            <input v-model="preferenceForm.preferredPersonalityTypesText" class="input" type="text" placeholder="INFJ, ENFP, ISTJ" />
+            <text class="label">最高体重（kg）</text>
+            <input v-model="preferenceForm.max_weight_kg" class="input" type="digit" placeholder="可不填" />
+          </view>
+          <view class="field">
+            <text class="label">最低年龄</text>
+            <input v-model="preferenceForm.min_age" class="input" type="number" placeholder="可不填" />
+          </view>
+          <view class="field">
+            <text class="label">最高年龄</text>
+            <input v-model="preferenceForm.max_age" class="input" type="number" placeholder="可不填" />
+          </view>
+          <view class="field">
+            <text class="label">偏好兴趣</text>
+            <input v-model="preferenceForm.preferredInterestsText" class="input" type="text" placeholder="音乐, 运动, 阅读, 旅行" />
           </view>
           <button class="btn btn-primary" :disabled="savingPreference" @tap="savePreference">
             {{ savingPreference ? '保存中...' : '保存匹配偏好' }}
@@ -140,11 +197,8 @@
           <view>
             <text class="section-title">候选人列表</text>
             <view style="height: 8rpx" />
-            <text class="section-desc">系统会根据你当前偏好给出基础匹配分数，遇到不合适对象时也可以直接举报或拉黑。</text>
+            <text class="section-desc">系统会根据你当前偏好给出基础匹配分数，下拉页面可以同时刷新候选人和匹配结果。</text>
           </view>
-          <button class="btn btn-ghost" size="mini" :disabled="loadingCandidates" @tap="loadCandidates">
-            {{ loadingCandidates ? '刷新中...' : '刷新候选人' }}
-          </button>
         </view>
         <view style="height: 20rpx" />
 
@@ -154,7 +208,7 @@
               <view>
                 <text class="section-title candidate-name">{{ candidate.nickname || candidate.user.nickname || candidate.user.email }}</text>
                 <view style="height: 8rpx" />
-                <text class="helper">{{ getGenderLabel(candidate.gender) }} · {{ candidate.height_cm || '未填写身高' }}</text>
+                <text class="helper">{{ getCandidateMeta(candidate) }}</text>
               </view>
               <view class="score-pill">匹配度 {{ candidate.match_score }}</view>
             </view>
@@ -162,7 +216,6 @@
             <view style="height: 14rpx" />
             <view class="tag-row">
               <text v-for="tag in candidate.interests" :key="tag" class="tag">{{ tag }}</text>
-              <text v-if="candidate.personality_type" class="tag">{{ candidate.personality_type }}</text>
             </view>
 
             <view style="height: 14rpx" />
@@ -201,11 +254,8 @@
           <view>
             <text class="section-title">已匹配结果</text>
             <view style="height: 8rpx" />
-            <text class="section-desc">只有双方都表达“感兴趣”时，才会出现在这里。</text>
+            <text class="section-desc">只有双方都表达“感兴趣”时，才会出现在这里；下拉页面可刷新最新结果。</text>
           </view>
-          <button class="btn btn-ghost" size="mini" :disabled="loadingMatches" @tap="loadMatches">
-            {{ loadingMatches ? '刷新中...' : '刷新匹配' }}
-          </button>
         </view>
         <view style="height: 20rpx" />
 
@@ -231,7 +281,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app'
 
 import type { DatingCandidate, DatingMatch, DatingPreference, DatingProfile } from '../../types/api'
 import {
@@ -245,10 +295,14 @@ import {
 } from '../../services/dating'
 import { createBlock, createModerationReport, fetchMyBlocks } from '../../services/moderation'
 import { ensureAuthenticated, isAuthenticated, profileOnboarded, redirectToLogin } from '../../utils/auth'
+import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
 const genderOptions = ['unknown', 'male', 'female', 'other']
+const genderOptionLabels = ['不限制/未说明', '男', '女', '其他']
+const genderPreferenceOptions = ['', ...genderOptions]
+const genderPreferenceLabels = ['不限', ...genderOptionLabels]
 const hasToken = ref(isAuthenticated.value)
 const profileComplete = computed(() => profileOnboarded.value)
 const savingProfile = ref(false)
@@ -261,13 +315,19 @@ const blockingId = ref('')
 const candidates = ref<DatingCandidate[]>([])
 const matches = ref<DatingMatch[]>([])
 const blockedUserIds = ref<Set<string>>(new Set())
+const profileEditorOpen = ref(false)
+const profileLoaded = ref(false)
+const preferenceEditorOpen = ref(false)
+const preferenceLoaded = ref(false)
 
 const profileForm = reactive({
   nickname: '',
   gender: 'unknown' as DatingProfile['gender'],
   height_cm: '',
+  height_private: false,
+  weight_kg: '',
+  age: '',
   interestsText: '',
-  personality_type: '',
   bio: '',
   is_visible: true,
 })
@@ -276,8 +336,11 @@ const preferenceForm = reactive({
   preferredGendersText: '',
   min_height_cm: '',
   max_height_cm: '',
+  min_weight_kg: '',
+  max_weight_kg: '',
+  min_age: '',
+  max_age: '',
   preferredInterestsText: '',
-  preferredPersonalityTypesText: '',
 })
 
 const profileGenderIndex = computed(() => {
@@ -285,15 +348,88 @@ const profileGenderIndex = computed(() => {
   return idx >= 0 ? idx : 0
 })
 
+const preferredGenderPickerIndex = computed(() => {
+  const values = splitList(preferenceForm.preferredGendersText)
+  if (!values.length) {
+    return 0
+  }
+  const idx = genderPreferenceOptions.indexOf(values[0])
+  return idx >= 0 ? idx : 0
+})
+
+const preferredGenderLabel = computed(() => {
+  const values = splitList(preferenceForm.preferredGendersText)
+  if (!values.length) {
+    return '不限'
+  }
+  return values.map(getGenderLabel).join('、')
+})
+
 onShow(() => {
   hasToken.value = isAuthenticated.value
   if (hasToken.value && profileComplete.value) {
-    bootstrapDating()
+    void bootstrapDating()
+  }
+})
+
+onPullDownRefresh(async () => {
+  if (hasToken.value && profileComplete.value) {
+    await bootstrapDating()
+  }
+  uni.stopPullDownRefresh()
+})
+
+onReachBottom(() => {
+  if (hasToken.value && profileComplete.value) {
+    void Promise.all([loadCandidates(), loadMatches(), loadBlocks()])
   }
 })
 
 async function bootstrapDating() {
   await Promise.all([loadProfile(), loadPreference(), loadCandidates(), loadMatches(), loadBlocks()])
+  applyAssistantDraft()
+}
+
+function applyAssistantDraft() {
+  const draft = consumeAssistantDraft('/pages/dating/index', ['dating_profile_update', 'dating_preference_update'])
+  if (!draft) {
+    return
+  }
+  const payload = draft.fill_payload
+  if (draft.kind === 'dating_profile_update') {
+    profileEditorOpen.value = true
+    profileForm.nickname = typeof payload.nickname === 'string' ? payload.nickname : profileForm.nickname
+    profileForm.gender = typeof payload.gender === 'string' ? payload.gender as DatingProfile['gender'] : profileForm.gender
+    profileForm.height_cm = payload.height_cm === null || payload.height_cm === undefined ? profileForm.height_cm : String(payload.height_cm)
+    profileForm.height_private = payload.height_cm === null || payload.height_cm === undefined
+    profileForm.weight_kg = payload.weight_kg === null || payload.weight_kg === undefined ? profileForm.weight_kg : String(payload.weight_kg)
+    profileForm.age = payload.age === null || payload.age === undefined ? profileForm.age : String(payload.age)
+    profileForm.bio = typeof payload.bio === 'string' ? payload.bio : profileForm.bio
+    profileForm.is_visible = typeof payload.is_visible === 'boolean' ? payload.is_visible : profileForm.is_visible
+    if (Array.isArray(payload.interests)) {
+      profileForm.interestsText = payload.interests.map(String).join(', ')
+    } else if (typeof payload.interests === 'string') {
+      profileForm.interestsText = payload.interests
+    }
+    showToast('AI 已填入展示资料草稿', 'success')
+    return
+  }
+  preferenceEditorOpen.value = true
+  preferenceForm.preferredGendersText = Array.isArray(payload.preferred_genders)
+    ? payload.preferred_genders.map(String).join(', ')
+    : preferenceForm.preferredGendersText
+  preferenceForm.min_height_cm = payload.min_height_cm === null || payload.min_height_cm === undefined ? preferenceForm.min_height_cm : String(payload.min_height_cm)
+  preferenceForm.max_height_cm = payload.max_height_cm === null || payload.max_height_cm === undefined ? preferenceForm.max_height_cm : String(payload.max_height_cm)
+  preferenceForm.min_weight_kg = payload.min_weight_kg === null || payload.min_weight_kg === undefined ? preferenceForm.min_weight_kg : String(payload.min_weight_kg)
+  preferenceForm.max_weight_kg = payload.max_weight_kg === null || payload.max_weight_kg === undefined ? preferenceForm.max_weight_kg : String(payload.max_weight_kg)
+  preferenceForm.min_age = payload.min_age === null || payload.min_age === undefined ? preferenceForm.min_age : String(payload.min_age)
+  preferenceForm.max_age = payload.max_age === null || payload.max_age === undefined ? preferenceForm.max_age : String(payload.max_age)
+  if (Array.isArray(payload.preferred_interests)) {
+    preferenceForm.preferredInterestsText = payload.preferred_interests.map(String).join(', ')
+  } else if (typeof payload.preferred_interests === 'string') {
+    preferenceForm.preferredInterestsText = payload.preferred_interests
+  }
+  showToast('AI 已填入匹配偏好草稿', 'success')
 }
 
 async function loadProfile() {
@@ -302,10 +438,14 @@ async function loadProfile() {
     profileForm.nickname = profile.nickname ?? ''
     profileForm.gender = profile.gender ?? 'unknown'
     profileForm.height_cm = profile.height_cm ? String(profile.height_cm) : ''
+    profileForm.height_private = profile.height_cm == null
+    profileForm.weight_kg = profile.weight_kg ? String(profile.weight_kg) : ''
+    profileForm.age = profile.age ? String(profile.age) : ''
     profileForm.interestsText = (profile.interests ?? []).join(', ')
-    profileForm.personality_type = profile.personality_type ?? ''
     profileForm.bio = profile.bio ?? ''
     profileForm.is_visible = profile.is_visible
+    profileLoaded.value = true
+    profileEditorOpen.value = !isDisplayProfileComplete()
   } catch (error) {
     showToast(error instanceof Error ? error.message : '加载匹配资料失败')
   }
@@ -317,8 +457,13 @@ async function loadPreference() {
     preferenceForm.preferredGendersText = (preference.preferred_genders ?? []).join(', ')
     preferenceForm.min_height_cm = preference.min_height_cm ? String(preference.min_height_cm) : ''
     preferenceForm.max_height_cm = preference.max_height_cm ? String(preference.max_height_cm) : ''
+    preferenceForm.min_weight_kg = preference.min_weight_kg ? String(preference.min_weight_kg) : ''
+    preferenceForm.max_weight_kg = preference.max_weight_kg ? String(preference.max_weight_kg) : ''
+    preferenceForm.min_age = preference.min_age ? String(preference.min_age) : ''
+    preferenceForm.max_age = preference.max_age ? String(preference.max_age) : ''
     preferenceForm.preferredInterestsText = (preference.preferred_interests ?? []).join(', ')
-    preferenceForm.preferredPersonalityTypesText = (preference.preferred_personality_types ?? []).join(', ')
+    preferenceLoaded.value = true
+    preferenceEditorOpen.value = !isPreferenceConfigured()
   } catch (error) {
     showToast(error instanceof Error ? error.message : '加载匹配偏好失败')
   }
@@ -356,18 +501,29 @@ async function loadBlocks() {
 }
 
 async function saveProfile() {
+  const height = normalizeHeight(profileForm.height_cm, profileForm.height_private)
+  const weight = normalizeOptionalFloat(profileForm.weight_kg)
+  const age = normalizeOptionalInteger(profileForm.age)
+  if (height === undefined || weight === undefined || age === undefined) {
+    showToast('身高、体重或年龄格式不正确')
+    return
+  }
+
   savingProfile.value = true
   try {
     await updateDatingProfile({
       nickname: profileForm.nickname.trim(),
       gender: profileForm.gender,
-      height_cm: profileForm.height_cm ? Number(profileForm.height_cm) : null,
+      height_cm: height,
+      weight_kg: weight,
+      age,
       interests: splitList(profileForm.interestsText),
-      personality_type: profileForm.personality_type.trim(),
+      personality_type: '',
       bio: profileForm.bio.trim(),
       is_visible: profileForm.is_visible,
     })
     showToast('匹配资料已保存', 'success')
+    profileEditorOpen.value = false
     await loadCandidates()
   } catch (error) {
     showToast(error instanceof Error ? error.message : '保存匹配资料失败')
@@ -377,16 +533,33 @@ async function saveProfile() {
 }
 
 async function savePreference() {
+  const minHeight = normalizeOptionalHeight(preferenceForm.min_height_cm)
+  const maxHeight = normalizeOptionalHeight(preferenceForm.max_height_cm)
+  const minWeight = normalizeOptionalFloat(preferenceForm.min_weight_kg)
+  const maxWeight = normalizeOptionalFloat(preferenceForm.max_weight_kg)
+  const minAge = normalizeOptionalInteger(preferenceForm.min_age)
+  const maxAge = normalizeOptionalInteger(preferenceForm.max_age)
+  if (minHeight === undefined || maxHeight === undefined || minWeight === undefined || maxWeight === undefined || minAge === undefined || maxAge === undefined) {
+    showToast('偏好范围请填写数字')
+    return
+  }
+
   savingPreference.value = true
   try {
     await updateDatingPreference({
       preferred_genders: splitList(preferenceForm.preferredGendersText) as DatingPreference['preferred_genders'],
-      min_height_cm: preferenceForm.min_height_cm ? Number(preferenceForm.min_height_cm) : null,
-      max_height_cm: preferenceForm.max_height_cm ? Number(preferenceForm.max_height_cm) : null,
+      min_height_cm: minHeight,
+      max_height_cm: maxHeight,
+      min_weight_kg: minWeight,
+      max_weight_kg: maxWeight,
+      min_age: minAge,
+      max_age: maxAge,
       preferred_interests: splitList(preferenceForm.preferredInterestsText),
-      preferred_personality_types: splitList(preferenceForm.preferredPersonalityTypesText),
+      preferred_personality_types: [],
     })
     showToast('匹配偏好已保存', 'success')
+    preferenceLoaded.value = true
+    preferenceEditorOpen.value = false
     await loadCandidates()
   } catch (error) {
     showToast(error instanceof Error ? error.message : '保存匹配偏好失败')
@@ -478,8 +651,145 @@ function handleProfileGenderChange(event: { detail?: { value?: string | number }
   profileForm.gender = (genderOptions[Number(event.detail?.value ?? 0)] ?? 'unknown') as DatingProfile['gender']
 }
 
+function handlePreferredGenderChange(event: { detail?: { value?: string | number } }) {
+  const selected = genderPreferenceOptions[Number(event.detail?.value ?? 0)] ?? ''
+  preferenceForm.preferredGendersText = selected
+}
+
 function handleVisibleChange(event: { detail?: { value?: boolean } }) {
   profileForm.is_visible = Boolean(event.detail?.value)
+}
+
+function openProfileEditor() {
+  profileEditorOpen.value = true
+}
+
+function openPreferenceEditor() {
+  preferenceEditorOpen.value = true
+}
+
+function toggleHeightPrivate() {
+  profileForm.height_private = !profileForm.height_private
+  if (profileForm.height_private) {
+    profileForm.height_cm = ''
+  }
+}
+
+function normalizeHeight(value: string, privateHeight: boolean) {
+  if (privateHeight) {
+    return null
+  }
+  return normalizeOptionalHeight(value)
+}
+
+function normalizeOptionalHeight(value: string) {
+  return normalizeOptionalFloat(value)
+}
+
+function normalizeOptionalFloat(value: string) {
+  const trimmed = value.trim()
+  if (!trimmed) {
+    return null
+  }
+  const parsed = Number(trimmed)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined
+  }
+  return parsed
+}
+
+function normalizeOptionalInteger(value: string) {
+  const parsed = normalizeOptionalFloat(value)
+  if (parsed === undefined || parsed === null) {
+    return parsed
+  }
+  if (!Number.isInteger(parsed)) {
+    return undefined
+  }
+  return parsed
+}
+
+function isDisplayProfileComplete() {
+  if (!profileLoaded.value) {
+    return false
+  }
+  return Boolean(profileForm.nickname.trim() || profileForm.bio.trim() || splitList(profileForm.interestsText).length)
+}
+
+function isPreferenceConfigured() {
+  if (!preferenceLoaded.value) {
+    return false
+  }
+  return Boolean(
+    splitList(preferenceForm.preferredGendersText).length
+      || preferenceForm.min_height_cm.trim()
+      || preferenceForm.max_height_cm.trim()
+      || preferenceForm.min_weight_kg.trim()
+      || preferenceForm.max_weight_kg.trim()
+      || preferenceForm.min_age.trim()
+      || preferenceForm.max_age.trim()
+      || splitList(preferenceForm.preferredInterestsText).length,
+  )
+}
+
+function getHeightLabel(value: string) {
+  if (profileForm.height_private || !value.trim()) {
+    return '不便透露身高'
+  }
+  return `${value.trim()}cm`
+}
+
+function getOptionalLabel(value: string, unit: string, emptyText: string) {
+  return value.trim() ? `${value.trim()}${unit}` : emptyText
+}
+
+function getProfileMeta() {
+  return [
+    getGenderLabel(profileForm.gender),
+    getHeightLabel(profileForm.height_cm),
+    getOptionalLabel(profileForm.weight_kg, 'kg', '未填写体重'),
+    getOptionalLabel(profileForm.age, '岁', '未填写年龄'),
+  ].join(' · ')
+}
+
+function getPreferenceGenderSummary() {
+  const values = splitList(preferenceForm.preferredGendersText)
+  if (!values.length) {
+    return '性别不限'
+  }
+  return values.map(getGenderLabel).join('、')
+}
+
+function getRangeText(minValue: string, maxValue: string, unit: string, emptyText: string) {
+  const minText = minValue.trim()
+  const maxText = maxValue.trim()
+  if (minText && maxText) {
+    return `${minText}-${maxText}${unit}`
+  }
+  if (minText) {
+    return `${minText}${unit}以上`
+  }
+  if (maxText) {
+    return `${maxText}${unit}以下`
+  }
+  return emptyText
+}
+
+function getPreferenceRangeSummary() {
+  return [
+    getRangeText(preferenceForm.min_height_cm, preferenceForm.max_height_cm, 'cm', '身高不限'),
+    getRangeText(preferenceForm.min_weight_kg, preferenceForm.max_weight_kg, 'kg', '体重不限'),
+    getRangeText(preferenceForm.min_age, preferenceForm.max_age, '岁', '年龄不限'),
+  ].join(' · ')
+}
+
+function getCandidateMeta(candidate: DatingCandidate) {
+  return [
+    getGenderLabel(candidate.gender),
+    candidate.height_cm ? `${candidate.height_cm}cm` : '未填写身高',
+    candidate.weight_kg ? `${candidate.weight_kg}kg` : '未填写体重',
+    candidate.age ? `${candidate.age}岁` : '未填写年龄',
+  ].join(' · ')
 }
 
 function getGenderLabel(value: string) {
@@ -576,6 +886,48 @@ function startChat(targetUserId: string) {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
+}
+
+.profile-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.height-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.height-input {
+  flex: 1;
+}
+
+.height-toggle {
+  flex-shrink: 0;
+  min-height: 72rpx;
+  padding: 0 22rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(16, 33, 51, 0.08);
+  color: #102133;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.height-toggle.active {
+  background: rgba(241, 107, 79, 0.14);
+  color: #f16b4f;
+}
+
+.height-toggle::after {
+  border: 0;
 }
 
 .candidate-card,
