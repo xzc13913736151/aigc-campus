@@ -57,14 +57,14 @@
           <view v-if="pendingImagePaths.length" class="image-section">
             <view class="section-head">
               <text class="helper">待上传图片 {{ pendingImagePaths.length }} 张</text>
-              <button class="mini-action" size="mini" @tap="clearPendingImages">
+              <button class="mini-action" @tap="clearPendingImages">
                 <text>清空</text>
               </button>
             </view>
             <view class="image-grid">
               <view v-for="path in pendingImagePaths" :key="path" class="image-tile">
                 <image class="post-image" :src="path" mode="aspectFill" @tap="previewPendingImages(path)" />
-                <button class="remove-image" size="mini" @tap="removePendingImage(path)">
+                <button class="remove-image" @tap="removePendingImage(path)">
                   <text>移除</text>
                 </button>
               </view>

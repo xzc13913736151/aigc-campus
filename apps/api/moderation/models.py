@@ -11,6 +11,7 @@ class Report(UUIDTimeStampedModel):
         TEAM_POST = "team_post", "Team post"
         FORUM_POST = "forum_post", "Forum post"
         COMMENT = "comment", "Comment"
+        TRADE_POST = "trade_post", "Trade post"
 
     class Status(models.TextChoices):
         OPEN = "open", "Open"
@@ -39,3 +40,16 @@ class Block(UUIDTimeStampedModel):
         constraints = [
             models.UniqueConstraint(fields=["user", "blocked_user"], name="unique_block_relation"),
         ]
+
+
+class ModerationActionLog(UUIDTimeStampedModel):
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="moderation_action_logs")
+    report = models.ForeignKey(Report, on_delete=models.SET_NULL, null=True, blank=True, related_name="action_logs")
+    action = models.CharField(max_length=60)
+    target_type = models.CharField(max_length=30, blank=True)
+    target_id = models.UUIDField(null=True, blank=True)
+    note = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

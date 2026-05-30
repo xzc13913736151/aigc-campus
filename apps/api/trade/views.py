@@ -10,6 +10,7 @@ from .serializers import (
     TradeMatchSerializer,
     TradePostCreateSerializer,
     TradePostSerializer,
+    TradePostStatusUpdateSerializer,
 )
 
 
@@ -52,8 +53,12 @@ class TradePostListCreateAPIView(generics.ListCreateAPIView):
 
 
 class TradePostDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
-    serializer_class = TradePostSerializer
     queryset = TradePost.objects.select_related("author")
+
+    def get_serializer_class(self):
+        if self.request.method == "PATCH" and set(self.request.data.keys()) <= {"status"}:
+            return TradePostStatusUpdateSerializer
+        return TradePostSerializer
 
     def get_permissions(self):
         if self.request.method in permissions.SAFE_METHODS:
@@ -65,6 +70,11 @@ class TradePostDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
         instance.view_count += 1
         instance.save(update_fields=["view_count"])
         return super().retrieve(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        response = super().partial_update(request, *args, **kwargs)
+        instance = self.get_object()
+        return Response(TradePostSerializer(instance, context=self.get_serializer_context()).data, status=response.status_code)
 
 
 class MyTradePostsAPIView(generics.ListAPIView):

@@ -30,21 +30,48 @@
           {{ submitting ? '登录中...' : '使用微信一键登录' }}
         </button>
         <text class="helper">如果登录失败，请确认小程序 AppID 与后端微信配置一致后再重试。</text>
+        <view class="divider">
+          <view class="divider-line" />
+          <text>本地调试 / 管理员</text>
+          <view class="divider-line" />
+        </view>
+        <input
+          v-model="email"
+          class="input"
+          type="text"
+          placeholder="管理员邮箱"
+          :disabled="submitting"
+        />
+        <input
+          v-model="password"
+          class="input"
+          type="password"
+          placeholder="密码"
+          :disabled="submitting"
+          @confirm="handlePasswordLogin"
+        />
+        <button class="btn btn-secondary" :disabled="submitting || !canPasswordLogin" @tap="handlePasswordLogin">
+          {{ submitting ? '登录中...' : '邮箱密码登录' }}
+        </button>
+        <text class="helper">用于本地调试和管理员账号登录，正式微信链路仍使用上方按钮。</text>
       </view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
-import { wechatLogin } from '../../services/auth'
+import { passwordLogin, wechatLogin } from '../../services/auth'
 import { applyLoginResult, completeLogin } from '../../utils/auth'
 import { showToast } from '../../utils/ui'
 import { getWechatLoginCode } from '../../utils/wechat'
 
 const submitting = ref(false)
 const errorMessage = ref('')
+const email = ref('')
+const password = ref('')
+const canPasswordLogin = computed(() => Boolean(email.value.trim() && password.value))
 
 const infoItems = [
   {
@@ -76,6 +103,30 @@ async function handleLogin() {
     submitting.value = false
   }
 }
+
+async function handlePasswordLogin() {
+  errorMessage.value = ''
+  const normalizedEmail = email.value.trim()
+  if (!normalizedEmail || !password.value) {
+    errorMessage.value = '请输入邮箱和密码'
+    return
+  }
+
+  submitting.value = true
+  try {
+    const response = await passwordLogin({
+      email: normalizedEmail,
+      password: password.value,
+    })
+    applyLoginResult(response)
+    showToast('登录成功', 'success')
+    await completeLogin(response.user ?? null)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '邮箱密码登录失败'
+  } finally {
+    submitting.value = false
+  }
+}
 </script>
 
 <style scoped lang="scss">
@@ -93,5 +144,19 @@ async function handleLogin() {
 
 .login-form {
   gap: 16rpx;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  color: #8a929c;
+  font-size: 22rpx;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1rpx;
+  background: rgba(16, 33, 51, 0.1);
 }
 </style>

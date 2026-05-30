@@ -1,5 +1,14 @@
 <template>
   <view class="container">
+    <AssistantSheet
+      :visible="assistantVisible"
+      page-type="publish"
+      :context-path="`/pages/teammates/index?assistantTarget=${assistantTargetPostId}`"
+      context-target-type="team_post"
+      :context-target-id="assistantTargetPostId"
+      @close="assistantVisible = false"
+    />
+
     <view class="section hero">
       <text class="eyebrow">CampusClaw 组队匹配</text>
       <view style="height: 18rpx" />
@@ -93,11 +102,11 @@
           </view>
           <view style="height: 18rpx" />
           <view class="action-row">
-            <button class="btn btn-secondary" size="mini" @tap="editPost(post)">编辑</button>
-            <button class="btn btn-ghost" size="mini" :disabled="closingPostId === post.id" @tap="togglePostStatus(post)">
+            <button class="btn btn-secondary" @tap="editPost(post)">编辑</button>
+            <button class="btn btn-ghost" :disabled="closingPostId === post.id" @tap="togglePostStatus(post)">
               {{ closingPostId === post.id ? '处理中...' : post.status === 'closed' ? '重新开放' : '关闭招募' }}
             </button>
-            <button class="btn btn-ghost" size="mini" :disabled="deletingPostId === post.id" @tap="handleDeletePost(post.id)">
+            <button class="btn btn-ghost" :disabled="deletingPostId === post.id" @tap="handleDeletePost(post.id)">
               {{ deletingPostId === post.id ? '删除中...' : '删除' }}
             </button>
           </view>
@@ -147,10 +156,10 @@
           <text class="section-desc">{{ application.message || '对方没有填写申请留言。' }}</text>
           <view v-if="application.status === 'pending'" style="height: 18rpx" />
           <view v-if="application.status === 'pending'" class="action-row">
-            <button class="btn btn-secondary" size="mini" :disabled="reviewingId === application.id" @tap="handleReview(application.id, 'accepted')">
+            <button class="btn btn-secondary" :disabled="reviewingId === application.id" @tap="handleReview(application.id, 'accepted')">
               {{ reviewingId === application.id ? '处理中...' : '通过' }}
             </button>
-            <button class="btn btn-ghost" size="mini" :disabled="reviewingId === application.id" @tap="handleReview(application.id, 'rejected')">
+            <button class="btn btn-ghost" :disabled="reviewingId === application.id" @tap="handleReview(application.id, 'rejected')">
               {{ reviewingId === application.id ? '处理中...' : '拒绝' }}
             </button>
           </view>
@@ -185,7 +194,7 @@
           <view style="height: 14rpx" />
           <view class="author-row">
             <text class="helper">发起人：{{ getPostAuthorName(post) }}</text>
-            <button class="link-button" size="mini" @tap="startChatToAuthor(post)">联系Ta</button>
+            <button class="link-button" @tap="startChatToAuthor(post)">联系Ta</button>
           </view>
           <view style="height: 12rpx" />
           <text class="section-desc">{{ post.details }}</text>
@@ -203,6 +212,11 @@
           <view style="height: 18rpx" />
           <text class="helper">当前状态：{{ getStatusText(post.status) }}</text>
 
+          <view v-if="canApply(post)" style="height: 14rpx" />
+          <view v-if="canApply(post)" class="action-row compact-row">
+            <button class="btn btn-ghost" @tap="openPostAssistant(post.id)">让 AI 帮我申请</button>
+          </view>
+
           <view v-if="canApply(post)" style="height: 18rpx" />
           <view v-if="canApply(post)" class="apply-box">
             <textarea
@@ -210,7 +224,7 @@
               class="textarea apply-textarea"
               placeholder="简单介绍一下你为什么适合加入，选填"
             />
-            <button class="btn btn-primary" size="mini" :disabled="applyingPostId === post.id" @tap="handleApply(post.id)">
+            <button class="btn btn-primary" :disabled="applyingPostId === post.id" @tap="handleApply(post.id)">
               {{ applyingPostId === post.id ? '申请中...' : '申请加入' }}
             </button>
           </view>
@@ -231,6 +245,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 
+import AssistantSheet from '../../components/assistant/AssistantSheet.vue'
 import type { TeamApplication, TeamPost } from '../../types/api'
 import { currentUser, ensureAuthenticated, isAuthenticated, profileOnboarded, redirectToLogin } from '../../utils/auth'
 import {
@@ -249,6 +264,8 @@ import { showToast } from '../../utils/ui'
 const hasToken = ref(isAuthenticated.value)
 const profileComplete = computed(() => profileOnboarded.value)
 const query = ref('')
+const assistantVisible = ref(false)
+const assistantTargetPostId = ref('')
 const loadingList = ref(false)
 const applyingPostId = ref('')
 const reviewingId = ref('')
@@ -373,6 +390,14 @@ function openComposer() {
     return
   }
   navigateTo('/pages/teammates/create')
+}
+
+function openPostAssistant(postId: string) {
+  if (!ensureAuthenticated('/pages/teammates/index')) {
+    return
+  }
+  assistantTargetPostId.value = postId
+  assistantVisible.value = true
 }
 
 function focusMyPosts() {

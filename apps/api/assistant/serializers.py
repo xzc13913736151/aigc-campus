@@ -23,6 +23,7 @@ class AssistantSessionSerializer(serializers.ModelSerializer):
             "context_path",
             "context_target_type",
             "context_target_id",
+            "state",
             "last_message",
             "created_at",
             "updated_at",
@@ -40,7 +41,7 @@ class AssistantSessionSerializer(serializers.ModelSerializer):
 class AssistantSessionCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssistantSession
-        fields = ("title", "page_type", "context_path", "context_target_type", "context_target_id")
+        fields = ("title", "page_type", "context_path", "context_target_type", "context_target_id", "state")
 
 
 class AssistantMessageCreateSerializer(serializers.Serializer):
@@ -62,6 +63,7 @@ class AssistantActionProposalSerializer(serializers.ModelSerializer):
             "title",
             "target_page",
             "preview",
+            "payload",
             "fill_payload",
             "status",
             "expires_at",

@@ -1,5 +1,14 @@
 <template>
   <view class="container">
+    <AssistantSheet
+      :visible="assistantVisible"
+      page-type="publish"
+      :context-path="`/pages/trade/index?assistantTarget=${assistantTargetPostId}`"
+      context-target-type="trade_post"
+      :context-target-id="assistantTargetPostId"
+      @close="assistantVisible = false"
+    />
+
     <view class="section hero">
       <text class="eyebrow">CampusClaw 交易匹配</text>
       <view style="height: 18rpx" />
@@ -26,6 +35,41 @@
         </view>
       </view>
 
+      <view v-if="myPosts.length" style="height: 20rpx" />
+      <view v-if="myPosts.length" class="card section">
+        <view class="toolbar-head">
+          <view>
+            <text class="section-title">我的交易管理</text>
+            <view style="height: 8rpx" />
+            <text class="section-desc">可以快速标记预定、完成或关闭。</text>
+          </view>
+        </view>
+        <view style="height: 18rpx" />
+        <view class="my-trade-list">
+          <view v-for="post in myPosts" :key="post.id" class="my-trade-item">
+            <view class="my-trade-main">
+              <text class="my-trade-title">{{ post.title }}</text>
+              <view style="height: 8rpx" />
+              <view class="status-badge" :class="`status-${post.status}`">{{ getStatusLabel(post.status) }}</view>
+            </view>
+            <scroll-view scroll-x class="status-scroll" enhanced show-scrollbar="false">
+              <view class="status-row">
+                <button
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  class="status-chip"
+                  :class="{ active: post.status === item.value }"
+                  :disabled="statusUpdatingId === post.id || post.status === item.value"
+                  @tap="changePostStatus(post, item.value)"
+                >
+                  {{ statusUpdatingId === post.id && post.status !== item.value ? '处理中' : item.label }}
+                </button>
+              </view>
+            </scroll-view>
+          </view>
+        </view>
+      </view>
+
       <view class="card section">
         <view class="toolbar-head">
           <view>
@@ -33,7 +77,7 @@
             <view style="height: 8rpx" />
             <text class="section-desc">下拉页面可以刷新内容。</text>
           </view>
-          <button class="btn btn-secondary" size="mini" @tap="goCreate">发布交易</button>
+          <button class="btn btn-secondary" @tap="goCreate">发布交易</button>
         </view>
 
         <view style="height: 20rpx" />
@@ -84,6 +128,7 @@
             <view class="post-type-badge" :class="post.post_type">
               <text>{{ getTypeLabel(post.post_type) }}</text>
             </view>
+            <view class="status-badge" :class="`status-${post.status}`">{{ getStatusLabel(post.status) }}</view>
             <text class="post-price">
               {{ post.price ? `¥${post.price}` : post.post_type === 'service' ? '免费' : '面议' }}
             </text>
@@ -110,7 +155,21 @@
             <button
               v-if="!isMine(post)"
               class="btn btn-ghost"
-              size="mini"
+              :disabled="reportingId === post.id"
+              @tap="reportTradePost(post)"
+            >
+              {{ reportingId === post.id ? '提交中...' : '举报' }}
+            </button>
+            <button
+              v-if="!isMine(post)"
+              class="btn btn-ghost"
+              @tap="openPostAssistant(post.id)"
+            >
+              让 AI 帮我处理
+            </button>
+            <button
+              v-if="!isMine(post)"
+              class="btn btn-ghost"
               :disabled="favoritingId === post.id"
               @tap="toggleFavorite(post)"
             >
@@ -119,7 +178,6 @@
             <button
               v-if="!isMine(post)"
               class="btn btn-secondary"
-              size="mini"
               @tap="contactAuthor(post)"
             >
               联系TA
@@ -127,7 +185,6 @@
             <button
               v-if="isMine(post)"
               class="btn btn-ghost"
-              size="mini"
               @tap="deletePost(post.id)"
             >
               删除
@@ -172,7 +229,9 @@
 import { computed, ref } from 'vue'
 import { onPullDownRefresh, onReachBottom, onShow } from '@dcloudio/uni-app'
 
+import AssistantSheet from '../../components/assistant/AssistantSheet.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import { createModerationReport } from '../../services/moderation'
 import {
   deleteTradePost,
   favoriteTradePost,
@@ -180,6 +239,7 @@ import {
   fetchTradePosts,
   type TradePost,
   unfavoriteTradePost,
+  updateTradePostStatus,
 } from '../../services/trade'
 import { currentUser, ensureAuthenticated, isAuthenticated, redirectToLogin } from '../../utils/auth'
 import { navigateTo } from '../../utils/navigation'
@@ -187,6 +247,8 @@ import { showToast } from '../../utils/ui'
 
 const hasToken = computed(() => isAuthenticated.value)
 
+const assistantVisible = ref(false)
+const assistantTargetPostId = ref('')
 const posts = ref<TradePost[]>([])
 const myPosts = ref<TradePost[]>([])
 const loading = ref(false)
@@ -195,6 +257,8 @@ const activeType = ref('')
 const hasMore = ref(true)
 const pageError = ref('')
 const favoritingId = ref('')
+const statusUpdatingId = ref('')
+const reportingId = ref('')
 
 const typeFilters = [
   { value: '', label: '全部' },
@@ -202,6 +266,13 @@ const typeFilters = [
   { value: 'buy', label: '求购' },
   { value: 'exchange', label: '交换' },
   { value: 'service', label: '服务' },
+]
+
+const statusOptions: Array<{ value: TradePost['status']; label: string }> = [
+  { value: 'open', label: '出售中' },
+  { value: 'reserved', label: '已预定' },
+  { value: 'completed', label: '已完成' },
+  { value: 'closed', label: '已关闭' },
 ]
 
 const displayPosts = computed(() => {
@@ -269,6 +340,16 @@ function getTypeLabel(type: string) {
   return map[type] || type
 }
 
+function getStatusLabel(status: TradePost['status']) {
+  const map: Record<TradePost['status'], string> = {
+    open: '出售中',
+    reserved: '已预定',
+    completed: '已完成',
+    closed: '已关闭',
+  }
+  return map[status] || status
+}
+
 function getAuthorName(post: TradePost) {
   return post.author.nickname || post.author.full_name || post.author.email
 }
@@ -282,6 +363,12 @@ function contactAuthor(post: TradePost) {
   navigateTo(`/pages/chat/index?targetUserId=${post.author.id}&sourceType=trade_post&sourceId=${post.id}`)
 }
 
+function openPostAssistant(postId: string) {
+  if (!ensureAuthenticated('/pages/trade/index')) return
+  assistantTargetPostId.value = postId
+  assistantVisible.value = true
+}
+
 async function deletePost(id: string) {
   try {
     await deleteTradePost(id)
@@ -290,6 +377,45 @@ async function deletePost(id: string) {
     showToast('已删除', 'success')
   } catch (error) {
     showToast('删除失败', 'none')
+  }
+}
+
+async function changePostStatus(post: TradePost, nextStatus: TradePost['status']) {
+  if (statusUpdatingId.value || post.status === nextStatus) return
+  statusUpdatingId.value = post.id
+  try {
+    const updated = await updateTradePostStatus(post.id, nextStatus)
+    myPosts.value = myPosts.value.map((item) => (item.id === post.id ? updated : item))
+    if (updated.status === 'open') {
+      posts.value = posts.value.some((item) => item.id === updated.id)
+        ? posts.value.map((item) => (item.id === updated.id ? updated : item))
+        : [updated, ...posts.value]
+    } else {
+      posts.value = posts.value.filter((item) => item.id !== updated.id)
+    }
+    showToast('交易状态已更新', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '状态更新失败')
+  } finally {
+    statusUpdatingId.value = ''
+  }
+}
+
+async function reportTradePost(post: TradePost) {
+  if (!ensureAuthenticated('/pages/trade/index')) return
+  reportingId.value = post.id
+  try {
+    await createModerationReport({
+      target_type: 'trade_post',
+      target_id: post.id,
+      reason: '交易内容可能违规',
+      details: `${post.title}：${post.description.slice(0, 80)}`,
+    })
+    showToast('举报已提交，我们会尽快处理', 'success')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '举报失败')
+  } finally {
+    reportingId.value = ''
   }
 }
 
@@ -423,14 +549,48 @@ function goLogin() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12rpx;
 }
 
 .post-type-badge {
+  flex-shrink: 0;
   padding: 8rpx 16rpx;
   border-radius: 8rpx;
   font-size: 22rpx;
   color: #fff;
   font-weight: 600;
+}
+
+.status-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44rpx;
+  padding: 0 16rpx;
+  border-radius: 999rpx;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.status-open {
+  background: rgba(46, 125, 73, 0.12);
+  color: #2e7d49;
+}
+
+.status-reserved {
+  background: rgba(245, 164, 76, 0.15);
+  color: #a76310;
+}
+
+.status-completed {
+  background: rgba(74, 144, 226, 0.14);
+  color: #2f6faa;
+}
+
+.status-closed {
+  background: rgba(16, 33, 51, 0.1);
+  color: #637083;
 }
 
 .post-type-badge.sell {
@@ -450,9 +610,73 @@ function goLogin() {
 }
 
 .post-price {
+  margin-left: auto;
   font-size: 32rpx;
   font-weight: 700;
   color: #f16b4f;
+}
+
+.my-trade-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.my-trade-item {
+  padding: 18rpx;
+  border-radius: 20rpx;
+  background: rgba(247, 241, 232, 0.86);
+  border: 1rpx solid rgba(16, 33, 51, 0.08);
+}
+
+.my-trade-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.my-trade-title {
+  min-width: 0;
+  color: #102133;
+  font-size: 27rpx;
+  font-weight: 800;
+}
+
+.status-scroll {
+  width: 100%;
+  margin-top: 14rpx;
+  white-space: nowrap;
+}
+
+.status-row {
+  display: inline-flex;
+  gap: 12rpx;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 58rpx;
+  padding: 0 20rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.9);
+  color: #44515f;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.status-chip::after {
+  border: 0;
+}
+
+.status-chip.active {
+  background: #102133;
+  color: #fff;
 }
 
 .post-title {

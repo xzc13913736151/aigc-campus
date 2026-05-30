@@ -4,6 +4,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from accounts.serializers import UserSerializer
+from common.uploads import validate_uploaded_image
 
 from .models import ChatMessage, ChatThread
 
@@ -89,6 +90,9 @@ class ChatMessageCreateSerializer(serializers.ModelSerializer):
 
 class ChatImageMessageCreateSerializer(serializers.Serializer):
     image = serializers.ImageField()
+
+    def validate_image(self, value):
+        return validate_uploaded_image(value, label="聊天图片")
 
 
 class ChatMarkReadSerializer(serializers.Serializer):

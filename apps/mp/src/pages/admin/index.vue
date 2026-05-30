@@ -5,7 +5,7 @@
       <view style="height: 18rpx" />
       <text class="title">这里是内容审核台，用来处理帖子、评论和后续扩展的安全问题。</text>
       <view style="height: 18rpx" />
-      <text class="subtitle">管理员可以在这里查看举报统计、筛选举报记录，并直接执行结案、驳回或删除内容操作。</text>
+      <text class="subtitle">管理员可以在这里查看举报统计、筛选举报记录，并直接执行结案、驳回、删除或关闭违规内容。</text>
     </view>
 
     <view v-if="!isAdmin" class="card empty section">
@@ -45,9 +45,9 @@
           <view>
             <text class="section-title">举报列表</text>
             <view style="height: 8rpx" />
-            <text class="section-desc">当前优先支持论坛帖子和评论的审核处理，后续会继续扩展到用户、组队和匹配资料。</text>
+            <text class="section-desc">当前支持论坛帖子、评论和交易帖子的基础审核处理。</text>
           </view>
-          <button class="btn btn-ghost" size="mini" :disabled="loading" @tap="loadData">
+          <button class="btn btn-ghost" :disabled="loading" @tap="loadData">
             {{ loading ? '刷新中...' : '刷新' }}
           </button>
         </view>
@@ -63,7 +63,6 @@
               :key="item.value"
               class="btn btn-ghost filter-btn"
               :class="{ active: currentStatus === item.value }"
-              size="mini"
               @tap="changeStatus(item.value)"
             >
               {{ item.label }}
@@ -82,7 +81,6 @@
               :key="item.value"
               class="btn btn-ghost filter-btn"
               :class="{ active: currentTargetType === item.value }"
-              size="mini"
               @tap="changeTargetType(item.value)"
             >
               {{ item.label }}
@@ -114,7 +112,6 @@
             <view class="action-row">
               <button
                 class="btn btn-ghost"
-                size="mini"
                 :disabled="submittingId === report.id"
                 @tap="reviewReport(report.id, 'reviewing')"
               >
@@ -122,7 +119,6 @@
               </button>
               <button
                 class="btn btn-primary"
-                size="mini"
                 :disabled="submittingId === report.id"
                 @tap="reviewReport(report.id, 'resolved')"
               >
@@ -130,7 +126,6 @@
               </button>
               <button
                 class="btn btn-ghost"
-                size="mini"
                 :disabled="submittingId === report.id"
                 @tap="reviewReport(report.id, 'rejected')"
               >
@@ -139,7 +134,6 @@
               <button
                 v-if="report.target_type === 'forum_post'"
                 class="btn btn-secondary"
-                size="mini"
                 :disabled="submittingId === report.id || report.target_snapshot.is_deleted"
                 @tap="deleteForumPost(report.id)"
               >
@@ -148,11 +142,18 @@
               <button
                 v-if="report.target_type === 'comment'"
                 class="btn btn-secondary"
-                size="mini"
                 :disabled="submittingId === report.id"
                 @tap="deleteForumComment(report.id)"
               >
                 删除评论并结案
+              </button>
+              <button
+                v-if="report.target_type === 'trade_post'"
+                class="btn btn-secondary"
+                :disabled="submittingId === report.id || report.target_snapshot.status === 'closed'"
+                @tap="closeTradePost(report.id)"
+              >
+                {{ report.target_snapshot.status === 'closed' ? '交易已关闭' : '关闭交易并结案' }}
               </button>
             </view>
           </view>
@@ -163,6 +164,19 @@
           <view style="height: 10rpx" />
           <text class="section-desc">这说明当前内容比较干净，或者还没有人发起新的举报。</text>
         </view>
+      </view>
+
+      <view class="card">
+        <text class="section-title">最近审核操作</text>
+        <view style="height: 12rpx" />
+        <view v-if="actionLogs.length" class="log-list">
+          <view v-for="log in actionLogs" :key="log.id" class="log-item">
+            <text class="log-title">{{ getActionLabel(log.action) }}</text>
+            <view style="height: 6rpx" />
+            <text class="helper">{{ log.note || getTargetTypeLabel(log.target_type) }} · {{ formatDate(log.created_at) }}</text>
+          </view>
+        </view>
+        <text v-else class="section-desc">暂无审核操作记录。</text>
       </view>
 
       <view class="card">
@@ -182,8 +196,13 @@
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 
-import type { ModerationReport, ModerationReportStats } from '../../types/api'
-import { fetchModerationReports, fetchModerationReportStats, reviewModerationReport } from '../../services/moderation'
+import type { ModerationActionLog, ModerationReport, ModerationReportStats } from '../../types/api'
+import {
+  fetchModerationActionLogs,
+  fetchModerationReports,
+  fetchModerationReportStats,
+  reviewModerationReport,
+} from '../../services/moderation'
 import { currentUser, ensureAuthenticated } from '../../utils/auth'
 import { navigateTo } from '../../utils/navigation'
 import { getAdminUrl } from '../../utils/request'
@@ -196,6 +215,7 @@ const currentTargetType = ref('')
 const loading = ref(false)
 const submittingId = ref('')
 const reports = ref<ModerationReport[]>([])
+const actionLogs = ref<ModerationActionLog[]>([])
 const stats = reactive<ModerationReportStats>({
   all: 0,
   open: 0,
@@ -216,6 +236,7 @@ const typeFilters = [
   { label: '全部类型', value: '' },
   { label: '帖子举报', value: 'forum_post' },
   { label: '评论举报', value: 'comment' },
+  { label: '交易举报', value: 'trade_post' },
 ]
 
 async function loadData() {
@@ -225,15 +246,17 @@ async function loadData() {
 
   loading.value = true
   try {
-    const [statsData, reportsData] = await Promise.all([
+    const [statsData, reportsData, logsData] = await Promise.all([
       fetchModerationReportStats(),
       fetchModerationReports({
         status: currentStatus.value || undefined,
         target_type: currentTargetType.value || undefined,
       }),
+      fetchModerationActionLogs(),
     ])
     Object.assign(stats, statsData)
     reports.value = reportsData
+    actionLogs.value = logsData
   } catch (error) {
     showToast(error instanceof Error ? error.message : '加载审核数据失败')
   } finally {
@@ -296,6 +319,22 @@ async function deleteForumComment(reportId: string) {
   }
 }
 
+async function closeTradePost(reportId: string) {
+  submittingId.value = reportId
+  try {
+    await reviewModerationReport(reportId, {
+      status: 'resolved',
+      action: 'close_trade_post',
+    })
+    showToast('交易已关闭并结案', 'success')
+    await loadData()
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '关闭交易失败')
+  } finally {
+    submittingId.value = ''
+  }
+}
+
 function getStatusLabel(status: ModerationReport['status']) {
   if (status === 'open') {
     return '待处理'
@@ -316,6 +355,9 @@ function getTargetTypeLabel(targetType: string) {
   if (targetType === 'comment') {
     return '论坛评论'
   }
+  if (targetType === 'trade_post') {
+    return '交易帖子'
+  }
   if (targetType === 'dating_profile') {
     return '匹配资料'
   }
@@ -326,6 +368,19 @@ function getTargetTypeLabel(targetType: string) {
     return '用户'
   }
   return targetType
+}
+
+function getActionLabel(action: string) {
+  const map: Record<string, string> = {
+    delete_forum_post: '删除论坛帖子',
+    delete_forum_comment: '删除论坛评论',
+    close_trade_post: '关闭交易帖子',
+    set_status_open: '重开举报',
+    set_status_reviewing: '设为处理中',
+    set_status_resolved: '标记解决',
+    set_status_rejected: '驳回举报',
+  }
+  return map[action] || action
 }
 
 function getReportMeta(report: ModerationReport) {
@@ -462,5 +517,24 @@ onShow(() => {
   line-height: 1.7;
   color: #102133;
   word-break: break-all;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.log-item {
+  padding: 18rpx 20rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 250, 245, 0.92);
+  border: 1rpx solid rgba(16, 33, 51, 0.08);
+}
+
+.log-title {
+  color: #102133;
+  font-size: 27rpx;
+  font-weight: 800;
 }
 </style>

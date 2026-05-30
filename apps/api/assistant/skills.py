@@ -13,6 +13,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from chat.models import ChatMessage, ChatThread
 from dating.models import DatingPreference, DatingProfile, DatingSignal
 from forum.models import ForumComment, ForumCommentLike, ForumPost, ForumPostLike
+from moderation.services import is_blocked_pair
 from profiles.serializers import ProfileSerializer
 from teammates.models import TeamApplication, TeamPost
 from trade.models import TradeFavorite, TradePost
@@ -71,6 +72,10 @@ def _preview(title: str, body: str, action: str) -> dict[str, str]:
 
 def _result(page: str, message: str, **extra: Any) -> dict[str, Any]:
     return {"target_page": page, "message": message, **extra}
+
+
+def _canonical_thread_users(first, second):
+    return (first, second) if str(first.id) < str(second.id) else (second, first)
 
 
 def execute_forum_post_create(user, payload: dict[str, Any]) -> dict[str, Any]:
@@ -166,6 +171,40 @@ def execute_trade_favorite(user, payload: dict[str, Any]) -> dict[str, Any]:
     return _result("/pages/trade/index", "交易帖子已收藏", id=str(favorite.id), post_id=str(post.id))
 
 
+def execute_context_chat_message_send(user, payload: dict[str, Any]) -> dict[str, Any]:
+    target = get_object_or_404(User, pk=payload.get("target_user_id"))
+    if target.id == user.id:
+        raise ValidationError("不能给自己发消息")
+    if is_blocked_pair(user, target):
+        raise PermissionDenied("当前无法联系该用户")
+
+    user_a, user_b = _canonical_thread_users(user, target)
+    thread, _ = ChatThread.objects.get_or_create(
+        user_a=user_a,
+        user_b=user_b,
+        defaults={
+            "source_type": _text(payload.get("source_type"), "direct")[:30],
+            "source_id": _text(payload.get("source_id"))[:64],
+        },
+    )
+    if _text(payload.get("source_type")) and not thread.source_type:
+        thread.source_type = _text(payload.get("source_type"))[:30]
+        thread.source_id = _text(payload.get("source_id"))[:64]
+
+    body = _required_text(payload, "body", "消息内容", 1)
+    message = ChatMessage.objects.create(thread=thread, sender=user, body=body)
+    thread.updated_at = timezone.now()
+    thread.hidden_for_user_a = False
+    thread.hidden_for_user_b = False
+    thread.save(update_fields=["source_type", "source_id", "updated_at", "hidden_for_user_a", "hidden_for_user_b"])
+    return _result(
+        f"/pages/chat/index?threadId={thread.id}",
+        "消息已发送并已建立会话",
+        id=str(message.id),
+        thread_id=str(thread.id),
+    )
+
+
 def execute_dating_profile_update(user, payload: dict[str, Any]) -> dict[str, Any]:
     profile, _ = DatingProfile.objects.get_or_create(user=user)
     if "nickname" in payload:
@@ -246,6 +285,7 @@ SKILLS: dict[str, Skill] = {
     "team_apply": Skill("team_apply", "申请加入组队", "/pages/teammates/index", ("post_id", "message"), execute_team_apply),
     "trade_post_create": Skill("trade_post_create", "发布交易帖子", "/pages/trade/create", ("title", "description", "price", "post_type", "condition", "tags", "is_negotiable"), execute_trade_post_create),
     "trade_favorite": Skill("trade_favorite", "收藏交易帖子", "/pages/trade/index", ("post_id",), execute_trade_favorite),
+    "context_chat_message_send": Skill("context_chat_message_send", "联系对方并发送消息", "/pages/chat/index", ("target_user_id", "source_type", "source_id", "body"), execute_context_chat_message_send),
     "dating_profile_update": Skill("dating_profile_update", "保存恋爱展示资料", "/pages/dating/index", ("nickname", "gender", "height_cm", "weight_kg", "age", "interests", "bio", "is_visible"), execute_dating_profile_update),
     "dating_preference_update": Skill("dating_preference_update", "保存匹配偏好", "/pages/dating/index", ("preferred_genders", "preferred_interests", "min_height_cm", "max_height_cm", "min_weight_kg", "max_weight_kg", "min_age", "max_age"), execute_dating_preference_update),
     "dating_signal": Skill("dating_signal", "发送匹配信号", "/pages/dating/index", ("target_user_id", "signal"), execute_dating_signal),
@@ -255,10 +295,12 @@ SKILLS: dict[str, Skill] = {
 
 
 def _guess_kind(page_type: str, prompt: str) -> str:
-    if any(word in prompt for word in ["交易", "闲置", "出售", "求购", "交换"]):
-        return "trade_post_create"
-    if any(word in prompt for word in ["组队", "招募", "队友", "加入"]):
+    team_signals = ["小程序", "项目", "前端", "后端", "组队", "招募", "队友", "目标", "开发"]
+    trade_signals = ["闲置", "出售", "求购", "交换", "转让", "价格", "元", "面交", "可小刀", "成新"]
+    if any(word in prompt for word in team_signals):
         return "team_post_create"
+    if any(word in prompt for word in trade_signals) or ("交易" in prompt and not any(word in prompt for word in team_signals)):
+        return "trade_post_create"
     if any(word in prompt for word in ["恋爱", "匹配资料", "心动", "偏好"]):
         return "dating_profile_update"
     if any(word in prompt for word in ["聊天", "私聊", "消息"]):

@@ -44,7 +44,7 @@
             <view style="height: 10rpx" />
             <text class="section-desc">这部分决定别人看到你的第一印象，也会影响候选人排序。</text>
           </view>
-          <button v-if="!profileEditorOpen" class="btn btn-ghost" size="mini" @tap="openProfileEditor">
+          <button v-if="!profileEditorOpen" class="btn btn-ghost" @tap="openProfileEditor">
             修改资料
           </button>
         </view>
@@ -88,7 +88,6 @@
               <button
                 class="height-toggle"
                 :class="{ active: profileForm.height_private }"
-                size="mini"
                 @tap="toggleHeightPrivate"
               >
                 不便透露
@@ -136,7 +135,7 @@
             <view style="height: 10rpx" />
             <text class="section-desc">先用轻量配置表达偏好，后面我们还可以继续升级成更完整的问答方式。</text>
           </view>
-          <button v-if="!preferenceEditorOpen" class="btn btn-ghost" size="mini" @tap="openPreferenceEditor">
+          <button v-if="!preferenceEditorOpen" class="btn btn-ghost" @tap="openPreferenceEditor">
             修改偏好
           </button>
         </view>
@@ -223,18 +222,17 @@
 
             <view style="height: 18rpx" />
             <view class="action-row">
-              <button class="btn btn-primary" size="mini" :disabled="signalingId === candidate.user.id" @tap="handleSignal(candidate.user.id, 'interested')">
+              <button class="btn btn-primary" :disabled="signalingId === candidate.user.id" @tap="handleSignal(candidate.user.id, 'interested')">
                 {{ signalingId === candidate.user.id ? '提交中...' : '感兴趣' }}
               </button>
-              <button class="btn btn-ghost" size="mini" :disabled="signalingId === candidate.user.id" @tap="handleSignal(candidate.user.id, 'not_interested')">
+              <button class="btn btn-ghost" :disabled="signalingId === candidate.user.id" @tap="handleSignal(candidate.user.id, 'not_interested')">
                 {{ signalingId === candidate.user.id ? '提交中...' : '先跳过' }}
               </button>
-              <button class="btn btn-ghost" size="mini" :disabled="reportingId === candidate.id" @tap="handleReportCandidate(candidate)">
+              <button class="btn btn-ghost" :disabled="reportingId === candidate.id" @tap="handleReportCandidate(candidate)">
                 {{ reportingId === candidate.id ? '提交中...' : '举报' }}
               </button>
               <button
                 class="btn btn-secondary"
-                size="mini"
                 :disabled="blockingId === candidate.user.id || blockedUserIds.has(candidate.user.id)"
                 @tap="handleBlockCandidate(candidate)"
               >
@@ -265,7 +263,7 @@
             <view style="height: 8rpx" />
             <text class="helper">匹配时间：{{ formatDate(item.created_at) }}</text>
             <view v-if="item.counterpart?.id" style="height: 18rpx" />
-            <button v-if="item.counterpart?.id" class="btn btn-primary" size="mini" @tap="startChat(item.counterpart.id)">
+            <button v-if="item.counterpart?.id" class="btn btn-primary" @tap="startChat(item.counterpart.id)">
               开始聊天
             </button>
           </view>

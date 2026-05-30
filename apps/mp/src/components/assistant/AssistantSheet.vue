@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <view v-if="visible" class="assistant-root">
     <view class="assistant-mask" @tap="emit('close')" />
 
@@ -34,11 +34,11 @@
         <view style="height: 10rpx" />
         <text class="section-desc">它会结合你当前所在页面，帮你想标题、润色文案、整理表达和梳理下一步行动。</text>
         <view style="height: 20rpx" />
-        <button class="btn btn-primary" size="mini" @tap="goLogin">去登录</button>
+        <button class="btn btn-primary" @tap="goLogin">去登录</button>
       </view>
 
       <view v-else class="assistant-body">
-        <scroll-view scroll-y class="assistant-messages" :scroll-into-view="scrollIntoView" enhanced show-scrollbar="false">
+        <scroll-view scroll-y class="assistant-messages" :scroll-top="scrollTop" enhanced show-scrollbar="false">
           <view v-if="bootstrapping" class="assistant-loading">
             <view class="loading-bubble">
               <text class="assistant-role">AI 助手</text>
@@ -47,7 +47,7 @@
             </view>
           </view>
 
-          <view v-else-if="messages.length || pendingUserBody || sending" class="assistant-message-list">
+          <view v-else-if="messages.length || pendingUserBody || sending || actions.length" class="assistant-message-list">
             <view
               v-for="message in messages"
               :id="`assistant-message-${message.id}`"
@@ -85,25 +85,25 @@
               </view>
             </view>
 
-            <view id="assistant-bottom-anchor" class="assistant-bottom-anchor" />
+            <view v-if="actions.length" id="assistant-action-list" class="assistant-action-list">
+              <AssistantActionCard
+                v-for="action in actions"
+                :key="action.id"
+                :action="action"
+                :busy="actionBusyId === action.id"
+                @execute="handleExecuteAction"
+                @fill="handleFillAction"
+                @generate="handleGenerateOnly"
+              />
+            </view>
+
+            <view class="assistant-bottom-anchor" />
           </view>
 
           <view v-else class="assistant-empty inline-empty">
             <text class="section-desc">直接输入你现在想解决的事情，我会帮你一起梳理。</text>
           </view>
         </scroll-view>
-
-        <view v-if="actions.length" class="assistant-action-list">
-          <AssistantActionCard
-            v-for="action in actions"
-            :key="action.id"
-            :action="action"
-            :busy="actionBusyId === action.id"
-            @execute="handleExecuteAction"
-            @fill="handleFillAction"
-            @generate="handleGenerateOnly"
-          />
-        </view>
 
         <view class="assistant-actions">
           <button class="restart-link" :disabled="sending || bootstrapping" @tap="handleRestartSession">重新开始</button>
@@ -144,6 +144,7 @@ import { saveAssistantDraft } from '../../utils/assistantDraft'
 
 type SessionCacheEntry = {
   sessionId: string
+  session: AssistantSession | null
   messages: AssistantMessage[]
   actions: AssistantActionProposal[]
 }
@@ -152,6 +153,8 @@ const props = defineProps<{
   visible: boolean
   pageType: AssistantSession['page_type']
   contextPath: string
+  contextTargetType?: string
+  contextTargetId?: string
 }>()
 
 const emit = defineEmits<{
@@ -159,6 +162,7 @@ const emit = defineEmits<{
 }>()
 
 const hasToken = computed(() => isAuthenticated.value)
+const session = ref<AssistantSession | null>(null)
 const sessionId = ref('')
 const messages = ref<AssistantMessage[]>([])
 const draft = ref('')
@@ -168,15 +172,66 @@ const pendingUserBody = ref('')
 const errorMessage = ref('')
 const actions = ref<AssistantActionProposal[]>([])
 const actionBusyId = ref('')
-const scrollIntoView = ref('')
+const scrollTop = ref(0)
+const scrollBottomSeed = ref(100000)
 const sessionCache = ref<Record<string, SessionCacheEntry>>({})
+const refreshVersion = ref(0)
+const lastLocalMutationAt = ref(0)
+const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
 const sheetHeight = ref(64)
 const dragStartY = ref(0)
 const dragStartHeight = ref(64)
+const ASSISTANT_UI_DEBUG = true
 
-const sessionKey = computed(() => `${props.pageType}::${props.contextPath || ''}`)
+const sessionKey = computed(
+  () => `${props.pageType}::${props.contextPath || ''}::${props.contextTargetType || ''}::${props.contextTargetId || ''}`,
+)
 
 const messageTurns = computed(() => Math.max(1, Math.ceil(messages.value.length / 2)))
+
+function assistantUiDebug(event: string, payload: Record<string, unknown> = {}) {
+  if (!ASSISTANT_UI_DEBUG) {
+    return
+  }
+  try {
+    console.log('assistant_ui_debug', event, JSON.stringify(payload))
+  } catch {
+    console.log('assistant_ui_debug', event, payload)
+  }
+}
+
+function getMessageTime(message: AssistantMessage) {
+  return new Date(message.created_at).getTime() || 0
+}
+
+function mergeMessages(localMessages: AssistantMessage[], serverMessages: AssistantMessage[]) {
+  const byId = new Map<string, AssistantMessage>()
+  ;[...serverMessages, ...localMessages].forEach((message) => {
+    byId.set(message.id, message)
+  })
+  return Array.from(byId.values()).sort((first, second) => getMessageTime(first) - getMessageTime(second))
+}
+
+function hasAssistantAfter(messagesToCheck: AssistantMessage[], sentAt: number) {
+  return messagesToCheck.some((message) => message.role === 'assistant' && getMessageTime(message) >= sentAt - 1000)
+}
+
+function getActionTime(action: AssistantActionProposal) {
+  return new Date(action.created_at).getTime() || 0
+}
+
+function hasActionAfter(actionsToCheck: AssistantActionProposal[], sentAt: number) {
+  return actionsToCheck.some((action) => getActionTime(action) >= sentAt - 1000)
+}
+
+function hasResponseForTurn(sentAt: number) {
+  return hasAssistantAfter(messages.value, sentAt) || hasActionAfter(actions.value, sentAt)
+}
+
+function clearLateResponseRecovery() {
+  recoveryTimers.value.forEach((timer) => clearTimeout(timer))
+  recoveryTimers.value = []
+}
 
 watch(
   () => sessionKey.value,
@@ -208,14 +263,16 @@ watch(
   () => hasToken.value,
   (value) => {
     if (!value) {
+      session.value = null
       sessionId.value = ''
       messages.value = []
+      actions.value = []
     }
   },
 )
 
 watch(
-  [() => messages.value.length, () => pendingUserBody.value, () => sending.value],
+  [() => messages.value.length, () => pendingUserBody.value, () => sending.value, () => actions.value.length],
   () => {
     if (props.visible) {
       void scrollToBottom()
@@ -240,13 +297,38 @@ function handleDragMove(event: TouchEvent) {
 }
 
 function restoreCachedSession() {
+  if (sending.value || pendingUserBody.value) {
+    assistantUiDebug('restore_skip_sending', {
+      sessionKey: sessionKey.value,
+      messages: messages.value.length,
+    })
+    return
+  }
+  if (Date.now() - lastLocalMutationAt.value < 8000 && messages.value.length) {
+    assistantUiDebug('restore_skip_recent_local', {
+      sessionKey: sessionKey.value,
+      messages: messages.value.length,
+    })
+    return
+  }
   const cached = sessionCache.value[sessionKey.value]
   if (!cached) {
+    assistantUiDebug('restore_clear_no_cache', {
+      sessionKey: sessionKey.value,
+      messages: messages.value.length,
+    })
+    session.value = null
     sessionId.value = ''
     messages.value = []
     actions.value = []
     return
   }
+  assistantUiDebug('restore_apply_cache', {
+    sessionKey: sessionKey.value,
+    cachedMessages: cached.messages.length,
+    currentMessages: messages.value.length,
+  })
+  session.value = cached.session
   sessionId.value = cached.sessionId
   messages.value = [...cached.messages]
   actions.value = [...cached.actions]
@@ -260,10 +342,24 @@ function persistCurrentSession() {
     ...sessionCache.value,
     [sessionKey.value]: {
       sessionId: sessionId.value,
+      session: session.value,
       messages: [...messages.value],
       actions: [...actions.value],
     },
   }
+}
+
+async function createFreshSession() {
+  const createdSession = await createAssistantSession({
+    page_type: props.pageType,
+    context_path: props.contextPath,
+    context_target_type: props.contextTargetType,
+    context_target_id: props.contextTargetId,
+  })
+  session.value = createdSession
+  sessionId.value = createdSession.id
+  await refreshSessionState(createdSession.id)
+  persistCurrentSession()
 }
 
 async function ensureSessionReady() {
@@ -276,42 +372,102 @@ async function ensureSessionReady() {
   try {
     const existingSession = await resolveExistingSession()
     if (existingSession) {
+      session.value = existingSession
       sessionId.value = existingSession.id
       await refreshSessionState(existingSession.id)
       persistCurrentSession()
       return
     }
 
-    const session = await createAssistantSession({
-      page_type: props.pageType,
-      context_path: props.contextPath,
-    })
-    sessionId.value = session.id
-    await refreshSessionState(session.id)
-    persistCurrentSession()
+    await createFreshSession()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'AI 助手暂时不可用'
+    errorMessage.value = error instanceof Error ? error.message : 'AI assistant unavailable'
   } finally {
     bootstrapping.value = false
   }
 }
 
-async function refreshSessionState(targetSessionId = sessionId.value) {
+async function refreshSessionState(targetSessionId = sessionId.value, force = false) {
   if (!targetSessionId) {
     return
   }
-  const [nextMessages, nextActions] = await Promise.all([
+  const requestVersion = ++refreshVersion.value
+  assistantUiDebug('refresh_start', {
+    requestVersion,
+    targetSessionId,
+    messages: messages.value.length,
+  })
+  const [nextMessages, nextActions, sessions] = await Promise.all([
     fetchAssistantMessages(targetSessionId),
     fetchAssistantActions(targetSessionId),
+    fetchAssistantSessions(),
   ])
-  messages.value = nextMessages
+  if (requestVersion !== refreshVersion.value || (!force && (sending.value || pendingUserBody.value)) || targetSessionId !== sessionId.value) {
+    assistantUiDebug('refresh_skip_stale_or_sending', {
+      requestVersion,
+      currentVersion: refreshVersion.value,
+      targetSessionId,
+      currentSessionId: sessionId.value,
+      sending: sending.value,
+      pending: Boolean(pendingUserBody.value),
+      force,
+      nextMessages: nextMessages.length,
+      currentMessages: messages.value.length,
+    })
+    return
+  }
+  if (Date.now() - lastLocalMutationAt.value < 8000 && nextMessages.length < messages.value.length) {
+    assistantUiDebug('refresh_skip_recent_smaller', {
+      requestVersion,
+      nextMessages: nextMessages.length,
+      currentMessages: messages.value.length,
+    })
+    return
+  }
+  assistantUiDebug('refresh_apply', {
+    requestVersion,
+    nextMessages: nextMessages.length,
+    currentMessages: messages.value.length,
+    nextActions: nextActions.length,
+  })
+  session.value = sessions.find((item) => item.id === targetSessionId) ?? session.value
+  messages.value = mergeMessages(messages.value, nextMessages)
   actions.value = nextActions
+  void scrollToBottom()
+}
+
+function scheduleLateResponseRecovery(targetSessionId: string, sentAt = Date.now()) {
+  if (!targetSessionId) {
+    return
+  }
+  clearLateResponseRecovery()
+  ;[3000, 6000, 10000, 15000, 30000, 60000, 120000].forEach((delay) => {
+    const timer = setTimeout(async () => {
+      if (sessionId.value === targetSessionId) {
+        await refreshSessionState(targetSessionId, true)
+        if (hasResponseForTurn(sentAt)) {
+          pendingUserBody.value = ''
+          sending.value = false
+          clearLateResponseRecovery()
+          persistCurrentSession()
+          void scrollToBottom()
+        }
+      }
+    }, delay)
+    recoveryTimers.value.push(timer)
+  })
 }
 
 async function resolveExistingSession() {
   const sessions = await fetchAssistantSessions()
   const matched = sessions
-    .filter((item) => item.page_type === props.pageType && (item.context_path || '') === (props.contextPath || ''))
+    .filter(
+      (item) =>
+        item.page_type === props.pageType &&
+        (item.context_path || '') === (props.contextPath || '') &&
+        (item.context_target_type || '') === (props.contextTargetType || '') &&
+        (item.context_target_id || '') === (props.contextTargetId || ''),
+    )
     .sort((first, second) => second.updated_at.localeCompare(first.updated_at))[0]
   return matched ?? null
 }
@@ -324,7 +480,7 @@ async function handleSend() {
   const body = draft.value.trim()
 
   if (!body) {
-    errorMessage.value = '请输入你想问 AI 的内容'
+    errorMessage.value = 'Please enter a message'
     return
   }
 
@@ -336,41 +492,85 @@ async function handleSend() {
   sending.value = true
   pendingUserBody.value = body
   draft.value = ''
+  const sentAt = Date.now()
   const previousMessageCount = messages.value.length
+  scheduleLateResponseRecovery(sessionId.value, sentAt)
+  let keepLoadingForRecovery = false
+  let hasTurnResponse = false
   try {
     const response = await sendAssistantMessage(sessionId.value, { body })
-    messages.value = [...messages.value, response.user_message, response.assistant_message]
+    refreshVersion.value++
+    clearLateResponseRecovery()
+    lastLocalMutationAt.value = Date.now()
+    session.value = response.session
+    messages.value = mergeMessages(messages.value, [response.user_message, response.assistant_message])
     actions.value = response.actions ?? []
+    hasTurnResponse = hasResponseForTurn(sentAt)
+    assistantUiDebug('send_success_apply_response', {
+      sessionId: sessionId.value,
+      messages: messages.value.length,
+      actions: actions.value.length,
+      hasTurnResponse,
+      userMessageId: response.user_message.id,
+      assistantMessageId: response.assistant_message.id,
+    })
     persistCurrentSession()
   } catch (error) {
+    const failedSessionId = sessionId.value
     try {
-      await refreshSessionState()
-      if (messages.value.length <= previousMessageCount) {
+      await refreshSessionState(sessionId.value, true)
+      hasTurnResponse = hasResponseForTurn(sentAt)
+      keepLoadingForRecovery = !hasTurnResponse
+      if (messages.value.length <= previousMessageCount && !keepLoadingForRecovery) {
         draft.value = body
-        errorMessage.value = error instanceof Error ? error.message : '发送失败'
+        errorMessage.value = error instanceof Error ? error.message : 'Send failed'
       }
     } catch {
-      draft.value = body
-      errorMessage.value = error instanceof Error ? error.message : '发送失败'
+      keepLoadingForRecovery = true
+      errorMessage.value = error instanceof Error ? error.message : 'Send failed'
+    } finally {
+      if (keepLoadingForRecovery) {
+        errorMessage.value = ''
+      }
+      scheduleLateResponseRecovery(failedSessionId, sentAt)
     }
   } finally {
-    pendingUserBody.value = ''
-    sending.value = false
+    if (hasTurnResponse || !keepLoadingForRecovery) {
+      pendingUserBody.value = ''
+      sending.value = false
+      clearLateResponseRecovery()
+    }
+    assistantUiDebug('send_finally', {
+      sessionId: sessionId.value,
+      messages: messages.value.length,
+      actions: actions.value.length,
+    })
+    void scrollToBottom()
   }
 }
 
 async function handleRestartSession() {
+  clearLateResponseRecovery()
+  bootstrapping.value = true
+  session.value = null
   sessionId.value = ''
   messages.value = []
   actions.value = []
   pendingUserBody.value = ''
+  sending.value = false
   errorMessage.value = ''
 
   const nextCache = { ...sessionCache.value }
   delete nextCache[sessionKey.value]
   sessionCache.value = nextCache
 
-  await ensureSessionReady()
+  try {
+    await createFreshSession()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : 'AI assistant unavailable'
+  } finally {
+    bootstrapping.value = false
+  }
 }
 
 function openTargetPage(targetPage: string) {
@@ -386,7 +586,7 @@ function openTargetPage(targetPage: string) {
 
 function handleFillAction(action: AssistantActionProposal) {
   saveAssistantDraft(action)
-  uni.showToast({ title: '已填入草稿', icon: 'success' })
+  uni.showToast({ title: 'Draft filled', icon: 'success' })
   openTargetPage(action.target_page)
 }
 
@@ -397,9 +597,9 @@ function handleGenerateOnly(action: AssistantActionProposal) {
 
 function handleExecuteAction(action: AssistantActionProposal) {
   uni.showModal({
-    title: '确认执行 AI 动作',
-    content: `将执行：${action.title}。请确认内容无误后继续。`,
-    confirmText: '确认执行',
+    title: 'Confirm AI action',
+    content: 'Will execute: ' + action.title + '. Please confirm the content before continuing.',
+    confirmText: 'Confirm',
     success: async (result) => {
       if (!result.confirm) {
         return
@@ -409,12 +609,12 @@ function handleExecuteAction(action: AssistantActionProposal) {
         const response = await executeAssistantAction(action.id)
         actions.value = actions.value.map((item) => (item.id === action.id ? response.action : item))
         persistCurrentSession()
-        uni.showToast({ title: response.result.message || '执行成功', icon: 'success' })
+        uni.showToast({ title: response.result.message || 'Executed', icon: 'success' })
         if (response.result.target_page) {
           openTargetPage(String(response.result.target_page))
         }
       } catch (error) {
-        uni.showToast({ title: error instanceof Error ? error.message : '执行失败', icon: 'none' })
+        uni.showToast({ title: error instanceof Error ? error.message : 'Execute failed', icon: 'none' })
       } finally {
         actionBusyId.value = ''
       }
@@ -424,13 +624,15 @@ function handleExecuteAction(action: AssistantActionProposal) {
 
 async function scrollToBottom() {
   await nextTick()
-  scrollIntoView.value = ''
-  await nextTick()
-  if (sending.value) {
-    scrollIntoView.value = pendingUserBody.value ? 'assistant-thinking' : 'assistant-bottom-anchor'
-    return
-  }
-  scrollIntoView.value = 'assistant-bottom-anchor'
+  const delays = [30, 120, 280]
+  delays.forEach((delay) => {
+    setTimeout(() => {
+      void nextTick().then(() => {
+        scrollBottomSeed.value += 100000
+        scrollTop.value = scrollBottomSeed.value
+      })
+    }, delay)
+  })
 }
 
 function formatDate(value: string) {
@@ -567,12 +769,14 @@ function goLogin() {
   min-height: 0;
   flex-direction: column;
   gap: 10rpx;
+  box-sizing: border-box;
 }
 
 .assistant-messages {
   flex: 1;
   min-height: 220rpx;
   padding-right: 4rpx;
+  box-sizing: border-box;
 }
 
 .assistant-action-list {
@@ -580,8 +784,7 @@ function goLogin() {
   display: flex;
   flex-direction: column;
   gap: 14rpx;
-  max-height: 260rpx;
-  overflow: auto;
+  padding-top: 4rpx;
 }
 
 .assistant-message-list,
@@ -746,6 +949,6 @@ function goLogin() {
 }
 
 .assistant-bottom-anchor {
-  height: 1rpx;
+  height: 148rpx;
 }
 </style>

@@ -79,7 +79,6 @@
             </view>
             <button
               class="btn btn-secondary"
-              size="mini"
               :disabled="startingContactId === contact.id"
               @tap="startContactChat(contact)"
             >
@@ -127,8 +126,8 @@
             </view>
             <view style="height: 16rpx" />
             <view class="action-row">
-              <button class="btn btn-ghost" size="mini" @tap="openThread(thread.id)">进入聊天</button>
-              <button class="btn btn-ghost" size="mini" :disabled="hidingThreadId === thread.id" @tap="handleHideThread(thread.id)">
+              <button class="btn btn-ghost" @tap="openThread(thread.id)">进入聊天</button>
+              <button class="btn btn-ghost" :disabled="hidingThreadId === thread.id" @tap="handleHideThread(thread.id)">
                 {{ hidingThreadId === thread.id ? '隐藏中...' : '隐藏会话' }}
               </button>
             </view>
@@ -153,7 +152,7 @@
             <text class="section-desc">帖子互动、聊天提醒和系统消息都会集中在这里，避免打断你主线聊天。</text>
           </view>
           <view class="action-row">
-            <button class="btn btn-primary" size="mini" :disabled="!notifications.length || unreadCount === 0" @tap="handleMarkAllRead">
+            <button class="btn btn-primary" :disabled="!notifications.length || unreadCount === 0" @tap="handleMarkAllRead">
               全部已读
             </button>
           </view>
@@ -174,11 +173,10 @@
             <text class="section-desc">{{ item.body }}</text>
             <view style="height: 18rpx" />
             <view class="action-row">
-              <button class="btn btn-ghost" size="mini" @tap="openNotification(item)">查看</button>
+              <button class="btn btn-ghost" @tap="openNotification(item)">查看</button>
               <button
                 v-if="!item.is_read"
                 class="btn btn-ghost"
-                size="mini"
                 :disabled="markingId === item.id"
                 @tap="handleMarkRead(item.id)"
               >

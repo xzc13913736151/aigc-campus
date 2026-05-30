@@ -30,7 +30,7 @@ export function sendAssistantMessage(sessionId: string, payload: { body: string 
   return request<AssistantReplyResponse>(`assistant/sessions/${sessionId}/messages/`, {
     method: 'POST',
     data: payload,
-    timeout: 70000,
+    timeout: 180000,
   })
 }
 

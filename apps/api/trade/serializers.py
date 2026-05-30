@@ -66,6 +66,18 @@ class TradePostCreateSerializer(serializers.ModelSerializer):
         return value
 
 
+class TradePostStatusUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TradePost
+        fields = ("status",)
+
+    def validate_status(self, value):
+        valid_statuses = {choice[0] for choice in TradePost.Status.choices}
+        if value not in valid_statuses:
+            raise serializers.ValidationError("交易状态不正确。")
+        return value
+
+
 class TradeFavoriteSerializer(serializers.ModelSerializer):
     post = TradePostSerializer(read_only=True)
 

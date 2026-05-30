@@ -41,12 +41,12 @@
         </view>
         <view style="height: 20rpx" />
         <view class="action-row">
-          <button class="btn btn-ghost" size="mini" :disabled="liking" @tap="handleLike">
+          <button class="btn btn-ghost" :disabled="liking" @tap="handleLike">
             {{ post.is_liked ? `已点赞 ${post.like_count}` : `点赞 ${post.like_count}` }}
           </button>
-          <button v-if="!isAuthor" class="btn btn-ghost" size="mini" @tap="handleReportPost">举报帖子</button>
-          <button v-if="isAuthor" class="btn btn-secondary" size="mini" @tap="goEdit">编辑帖子</button>
-          <button v-if="isAuthor" class="btn btn-ghost" size="mini" :disabled="deleting" @tap="handleDelete">
+          <button v-if="!isAuthor" class="btn btn-ghost" @tap="handleReportPost">举报帖子</button>
+          <button v-if="isAuthor" class="btn btn-secondary" @tap="goEdit">编辑帖子</button>
+          <button v-if="isAuthor" class="btn btn-ghost" :disabled="deleting" @tap="handleDelete">
             {{ deleting ? '删除中...' : '删除帖子' }}
           </button>
         </view>

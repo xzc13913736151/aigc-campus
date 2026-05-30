@@ -25,14 +25,14 @@
       <view style="height: 18rpx" />
 
       <view class="action-row filter-action-row">
-        <button class="btn btn-secondary" size="mini" :disabled="loadingList" @tap="refreshAll">
+        <button class="btn btn-secondary forum-toolbar-btn" :disabled="loadingList" @tap="refreshAll">
           {{ loadingList ? "搜索中..." : "搜索帖子" }}
         </button>
-        <button class="create-post-btn" @tap="goCreate">
-          <text class="create-post-label">发布帖子</text>
-        </button>
-        <button v-if="hasToken && myPosts.length" class="btn btn-ghost" size="mini" @tap="toggleMineOnly">
+        <button v-if="hasToken && myPosts.length" class="btn btn-ghost forum-toolbar-btn" @tap="toggleMineOnly">
           {{ mineOnly ? "查看全部帖子" : "只看我的帖子" }}
+        </button>
+        <button class="create-post-btn forum-toolbar-btn" @tap="goCreate">
+          <text class="create-post-label">发布帖子</text>
         </button>
       </view>
 
@@ -122,20 +122,18 @@
         <view style="height: 18rpx" />
 
         <view class="action-row">
-          <button class="btn btn-ghost" size="mini" @tap.stop="openDetail(post.id)">
+          <button class="btn btn-ghost" @tap.stop="openDetail(post.id)">
             查看详情
           </button>
           <button
             v-if="!isMine(post)"
             class="btn btn-secondary"
-            size="mini"
             @tap.stop="contactAuthor(post)"
           >
             联系TA
           </button>
           <button
             class="btn btn-ghost"
-            size="mini"
             :disabled="likingPostId === post.id"
             @tap.stop="handleLike(post.id)"
           >
@@ -148,7 +146,6 @@
           <button
             v-if="isMine(post)"
             class="btn btn-secondary"
-            size="mini"
             @tap.stop="goEdit(post.id)"
           >
             编辑
@@ -407,7 +404,7 @@ function contactAuthor(post: ForumPost) {
   min-width: 0;
 }
 
-.create-post-btn {
+.forum-toolbar-btn {
   flex: 0 0 188rpx;
   max-width: 188rpx;
   min-width: 188rpx;
@@ -415,17 +412,22 @@ function contactAuthor(post: ForumPost) {
   min-height: 72rpx;
   padding: 0;
   margin: 0;
-  border: 0;
   border-radius: 999rpx;
-  background: #f16b4f;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 26rpx;
   line-height: 1;
+  white-space: nowrap;
 }
 
-.create-post-btn::after {
+.forum-toolbar-btn::after {
   border: 0;
+}
+
+.create-post-btn {
+  border: 0;
+  background: #f16b4f;
 }
 
 .create-post-label {
@@ -476,7 +478,7 @@ function contactAuthor(post: ForumPost) {
 }
 
 .filter-action-row {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .post-card,

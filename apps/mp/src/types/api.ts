@@ -127,6 +127,9 @@ export type ModerationReportTargetSnapshot = {
   label: string
   author_email?: string
   is_deleted?: boolean
+  status?: string
+  price?: string
+  post_id?: string
 }
 
 export type ModerationReport = {
@@ -148,6 +151,18 @@ export type ModerationReportStats = {
   reviewing: number
   resolved: number
   rejected: number
+}
+
+export type ModerationActionLog = {
+  id: string
+  actor: UserSummary | null
+  report: string | null
+  action: string
+  target_type: string
+  target_id: string | null
+  note: string
+  metadata: Record<string, unknown>
+  created_at: string
 }
 
 export type BlockItem = {
@@ -239,6 +254,7 @@ export type AssistantActionProposal = {
     | 'team_apply'
     | 'trade_post_create'
     | 'trade_favorite'
+    | 'context_chat_message_send'
     | 'dating_profile_update'
     | 'dating_preference_update'
     | 'dating_signal'
@@ -247,11 +263,24 @@ export type AssistantActionProposal = {
   title: string
   target_page: string
   preview: Record<string, unknown>
+  payload: Record<string, unknown>
   fill_payload: Record<string, unknown>
   status: 'pending' | 'executed' | 'dismissed' | 'expired'
   expires_at: string
   created_at: string
   updated_at: string
+}
+
+export type AssistantSessionState = {
+  flow?: 'idle' | 'collecting' | 'confirming' | 'ready'
+  intent?: string
+  draft_kind?: AssistantActionProposal['kind'] | ''
+  draft_target_page?: string
+  missing_fields?: string[]
+  missing_field_labels?: string[]
+  collected_payload?: Record<string, unknown>
+  expanded_preview?: string
+  last_question?: string
 }
 
 export type AssistantSession = {
@@ -261,6 +290,7 @@ export type AssistantSession = {
   context_path: string
   context_target_type: string
   context_target_id: string
+  state: AssistantSessionState
   last_message: AssistantMessage | null
   created_at: string
   updated_at: string

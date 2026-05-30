@@ -28,7 +28,7 @@
           <view style="height: 8rpx" />
           <text class="section-desc">如果你希望恢复联系，可以在这里解除拉黑。</text>
         </view>
-        <button class="btn btn-ghost" size="mini" :disabled="loading" @tap="loadBlocks">
+        <button class="btn btn-ghost" :disabled="loading" @tap="loadBlocks">
           {{ loading ? '刷新中...' : '刷新' }}
         </button>
       </view>
@@ -50,7 +50,7 @@
           <view style="height: 10rpx" />
           <text class="helper">拉黑时间：{{ formatDate(item.created_at) }}</text>
           <view style="height: 18rpx" />
-          <button class="btn btn-secondary" size="mini" :disabled="removingId === item.id" @tap="handleUnblock(item.id)">
+          <button class="btn btn-secondary" :disabled="removingId === item.id" @tap="handleUnblock(item.id)">
             {{ removingId === item.id ? '处理中...' : '解除拉黑' }}
           </button>
         </view>

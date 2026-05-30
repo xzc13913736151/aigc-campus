@@ -121,6 +121,10 @@ export function isProfileComplete(profile: Pick<ProfileResponse, 'headline' | 'm
   return Boolean(profile.headline.trim() && profile.major.trim() && profile.grade.trim())
 }
 
+function isAdminUser(user: UserSummary | null) {
+  return user?.role === 'admin'
+}
+
 async function rawRequest<T>(path: string, options: RawRequestOptions = {}) {
   const { method = 'GET', token = null, data } = options
   const response = await uni.request({
@@ -258,7 +262,11 @@ export async function bootstrapAuth() {
     if (!user && !getAccessToken()) {
       clearAuthSession()
     } else if (getAccessToken()) {
-      await syncProfileOnboardingStatus()
+      if (isAdminUser(user)) {
+        setProfileOnboarded(true)
+      } else {
+        await syncProfileOnboardingStatus()
+      }
     }
 
     authReady.value = true
@@ -302,6 +310,12 @@ function getResolvedRedirect(fallback = DEFAULT_AUTHED_URL) {
 }
 
 export async function completeLogin(user: UserSummary | null) {
+  if (isAdminUser(user)) {
+    setProfileOnboarded(true)
+    navigateAfterAuth(getResolvedRedirect('/pages/admin/index'))
+    return
+  }
+
   const completed = await syncProfileOnboardingStatus()
   if (!completed) {
     navigateAfterAuth(PROFILE_PAGE_URL)

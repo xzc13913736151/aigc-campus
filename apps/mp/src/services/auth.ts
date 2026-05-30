@@ -9,6 +9,14 @@ export function wechatLogin(code: string) {
   })
 }
 
+export function passwordLogin(payload: { email: string; password: string }) {
+  return request<LoginResponse>('auth/login/', {
+    method: 'POST',
+    auth: false,
+    data: payload,
+  })
+}
+
 export function fetchCurrentUser() {
   return request<UserSummary>('auth/me/')
 }

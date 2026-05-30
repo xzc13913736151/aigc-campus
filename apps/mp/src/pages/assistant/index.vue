@@ -14,6 +14,7 @@
       class="message-list"
       scroll-y
       :scroll-top="scrollTop"
+      scroll-with-animation
       enhanced
       :show-scrollbar="false"
     >
@@ -52,7 +53,7 @@
         </view>
       </view>
 
-      <view v-if="loading" class="message-item message-assistant">
+      <view v-if="loading" id="assistant-thinking" class="message-item message-assistant">
         <view class="avatar avatar-assistant">
           <text>AI</text>
         </view>
@@ -60,19 +61,20 @@
           <text class="message-text loading-text">思考中...</text>
         </view>
       </view>
-    </scroll-view>
+      <view v-if="actions.length" id="assistant-action-list" class="action-list">
+        <AssistantActionCard
+          v-for="action in actions"
+          :key="action.id"
+          :action="action"
+          :busy="actionBusyId === action.id"
+          @execute="handleExecuteAction"
+          @fill="handleFillAction"
+          @generate="handleGenerateOnly"
+        />
+      </view>
 
-    <view v-if="actions.length" class="action-list">
-      <AssistantActionCard
-        v-for="action in actions"
-        :key="action.id"
-        :action="action"
-        :busy="actionBusyId === action.id"
-        @execute="handleExecuteAction"
-        @fill="handleFillAction"
-        @generate="handleGenerateOnly"
-      />
-    </view>
+      <view class="bottom-anchor" />
+    </scroll-view>
 
     <view class="input-area">
       <textarea
@@ -99,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 
 import AssistantActionCard from '../../components/assistant/AssistantActionCard.vue'
@@ -116,6 +118,11 @@ const inputText = ref('')
 const loading = ref(false)
 const actionBusyId = ref('')
 const scrollTop = ref(0)
+const scrollBottomSeed = ref(100000)
+const refreshVersion = ref(0)
+const lastLocalMutationAt = ref(0)
+const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
+const ASSISTANT_UI_DEBUG = true
 
 const quickReplies = [
   '帮我推荐一个比赛',
@@ -126,12 +133,67 @@ const quickReplies = [
 
 const canSend = computed(() => inputText.value.trim().length > 0 && !loading.value)
 
+function assistantUiDebug(event: string, payload: Record<string, unknown> = {}) {
+  if (!ASSISTANT_UI_DEBUG) {
+    return
+  }
+  try {
+    console.log('assistant_ui_debug', event, JSON.stringify(payload))
+  } catch {
+    console.log('assistant_ui_debug', event, payload)
+  }
+}
+
+function getMessageTime(message: AssistantMessage) {
+  return new Date(message.created_at).getTime() || 0
+}
+
+function mergeMessages(localMessages: AssistantMessage[], serverMessages: AssistantMessage[]) {
+  const serverRoleBodies = new Set(serverMessages.map((message) => `${message.role}::${message.body}`))
+  const byId = new Map<string, AssistantMessage>()
+  ;[...serverMessages, ...localMessages].forEach((message) => {
+    if (message.id.startsWith('temp-') && serverRoleBodies.has(`${message.role}::${message.body}`)) {
+      return
+    }
+    byId.set(message.id, message)
+  })
+  return Array.from(byId.values()).sort((first, second) => getMessageTime(first) - getMessageTime(second))
+}
+
+function hasAssistantAfter(messagesToCheck: AssistantMessage[], sentAt: number) {
+  return messagesToCheck.some((message) => message.role === 'assistant' && getMessageTime(message) >= sentAt - 1000)
+}
+
+function getActionTime(action: AssistantActionProposal) {
+  return new Date(action.created_at).getTime() || 0
+}
+
+function hasActionAfter(actionsToCheck: AssistantActionProposal[], sentAt: number) {
+  return actionsToCheck.some((action) => getActionTime(action) >= sentAt - 1000)
+}
+
+function hasResponseForTurn(sentAt: number) {
+  return hasAssistantAfter(messages.value, sentAt) || hasActionAfter(actions.value, sentAt)
+}
+
+function clearLateResponseRecovery() {
+  recoveryTimers.value.forEach((timer) => clearTimeout(timer))
+  recoveryTimers.value = []
+}
+
 onLoad(async () => {
   if (!ensureAuthenticated('/pages/assistant/index')) {
     return
   }
   await loadOrCreateSession()
 })
+
+watch(
+  [() => messages.value.length, () => loading.value, () => actions.value.length],
+  () => {
+    void scrollToBottom()
+  },
+)
 
 async function loadOrCreateSession() {
   try {
@@ -153,16 +215,71 @@ async function loadOrCreateSession() {
   scrollToBottom()
 }
 
-async function refreshSessionState() {
+async function refreshSessionState(force = false) {
   if (!sessionId.value) {
     return
   }
+  const targetSessionId = sessionId.value
+  const requestVersion = ++refreshVersion.value
+  assistantUiDebug('page_refresh_start', {
+    requestVersion,
+    targetSessionId,
+    messages: messages.value.length,
+  })
   const [msgs, nextActions] = await Promise.all([
-    fetchAssistantMessages(sessionId.value),
-    fetchAssistantActions(sessionId.value),
+    fetchAssistantMessages(targetSessionId),
+    fetchAssistantActions(targetSessionId),
   ])
-  messages.value = msgs
+  if (requestVersion !== refreshVersion.value || (!force && loading.value) || targetSessionId !== sessionId.value) {
+    assistantUiDebug('page_refresh_skip_stale_or_loading', {
+      requestVersion,
+      currentVersion: refreshVersion.value,
+      loading: loading.value,
+      force,
+      targetSessionId,
+      currentSessionId: sessionId.value,
+      nextMessages: msgs.length,
+      currentMessages: messages.value.length,
+    })
+    return
+  }
+  if (Date.now() - lastLocalMutationAt.value < 8000 && msgs.length < messages.value.length) {
+    assistantUiDebug('page_refresh_skip_recent_smaller', {
+      requestVersion,
+      nextMessages: msgs.length,
+      currentMessages: messages.value.length,
+    })
+    return
+  }
+  assistantUiDebug('page_refresh_apply', {
+    requestVersion,
+    nextMessages: msgs.length,
+    currentMessages: messages.value.length,
+    nextActions: nextActions.length,
+  })
+  messages.value = mergeMessages(messages.value, msgs)
   actions.value = nextActions
+  scrollToBottom()
+}
+
+function scheduleLateResponseRecovery(targetSessionId: string | null, sentAt = Date.now()) {
+  if (!targetSessionId) {
+    return
+  }
+  clearLateResponseRecovery()
+  ;[3000, 6000, 10000, 15000, 30000, 60000, 120000].forEach((delay) => {
+    const timer = setTimeout(async () => {
+      if (sessionId.value === targetSessionId) {
+        await refreshSessionState(true)
+        if (hasResponseForTurn(sentAt)) {
+          loading.value = false
+          clearLateResponseRecovery()
+          scrollToBottom()
+        }
+      }
+    }, delay)
+    recoveryTimers.value.push(timer)
+  })
 }
 
 async function handleSend() {
@@ -182,27 +299,54 @@ async function handleSend() {
     updated_at: new Date().toISOString(),
   }
   messages.value.push(tempUserMessage)
+  const sentAt = getMessageTime(tempUserMessage)
   const previousRealMessageCount = messages.value.filter((message) => !message.id.startsWith('temp-')).length
   scrollToBottom()
+  scheduleLateResponseRecovery(sessionId.value, sentAt)
 
+  let keepLoadingForRecovery = false
+  let hasTurnResponse = false
   try {
     const response = await sendAssistantMessage(sessionId.value, { body: text })
-    messages.value = messages.value.filter((m) => m.id !== tempUserMessage.id)
-    messages.value.push(response.user_message)
-    messages.value.push(response.assistant_message)
+    refreshVersion.value++
+    clearLateResponseRecovery()
+    lastLocalMutationAt.value = Date.now()
+    messages.value = mergeMessages(messages.value, [response.user_message, response.assistant_message])
     actions.value = response.actions ?? []
+    hasTurnResponse = hasResponseForTurn(sentAt)
+    assistantUiDebug('page_send_success_apply_response', {
+      sessionId: sessionId.value,
+      messages: messages.value.length,
+      actions: actions.value.length,
+      hasTurnResponse,
+      userMessageId: response.user_message.id,
+      assistantMessageId: response.assistant_message.id,
+    })
   } catch (error) {
+    const failedSessionId = sessionId.value
     try {
-      await refreshSessionState()
-      if (messages.value.length <= previousRealMessageCount) {
+      await refreshSessionState(true)
+      hasTurnResponse = hasResponseForTurn(sentAt)
+      keepLoadingForRecovery = !hasTurnResponse
+      if (messages.value.length <= previousRealMessageCount && !keepLoadingForRecovery) {
         showToast(error instanceof Error ? error.message : '发送失败')
       }
     } catch {
       showToast(error instanceof Error ? error.message : '发送失败')
-      messages.value = messages.value.filter((m) => m.id !== tempUserMessage.id)
+      keepLoadingForRecovery = true
+    } finally {
+      scheduleLateResponseRecovery(failedSessionId, sentAt)
     }
   } finally {
-    loading.value = false
+    if (hasTurnResponse || !keepLoadingForRecovery) {
+      loading.value = false
+      clearLateResponseRecovery()
+    }
+    assistantUiDebug('page_send_finally', {
+      sessionId: sessionId.value,
+      messages: messages.value.length,
+      actions: actions.value.length,
+    })
     scrollToBottom()
   }
 }
@@ -214,6 +358,8 @@ function handleQuickReply(text: string) {
 
 async function reloadSession() {
   try {
+    clearLateResponseRecovery()
+    loading.value = false
     const newSession = await createAssistantSession({
       page_type: 'general',
       title: '新对话',
@@ -273,10 +419,17 @@ function handleExecuteAction(action: AssistantActionProposal) {
   })
 }
 
-function scrollToBottom() {
-  setTimeout(() => {
-    scrollTop.value = 0
-  }, 50)
+async function scrollToBottom() {
+  await nextTick()
+  const delays = [30, 120, 280]
+  delays.forEach((delay) => {
+    setTimeout(() => {
+      void nextTick().then(() => {
+        scrollBottomSeed.value += 100000
+        scrollTop.value = scrollBottomSeed.value
+      })
+    }, delay)
+  })
 }
 
 function formatTime(value: string) {
@@ -291,9 +444,11 @@ function formatTime(value: string) {
 .container {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   background: #f7f1e8;
   padding-bottom: calc(112rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .header {
@@ -342,6 +497,7 @@ function formatTime(value: string) {
   padding: 24rpx;
   min-height: 0;
   padding-bottom: 156rpx;
+  box-sizing: border-box;
 }
 
 .empty-state {
@@ -467,12 +623,14 @@ function formatTime(value: string) {
 
 .action-list {
   flex-shrink: 0;
-  max-height: 300rpx;
-  padding: 0 24rpx 16rpx;
+  padding: 8rpx 0 16rpx;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
-  overflow: auto;
+}
+
+.bottom-anchor {
+  height: 176rpx;
 }
 
 .input-field {

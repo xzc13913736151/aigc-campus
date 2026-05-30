@@ -18,6 +18,7 @@ class AssistantSession(UUIDTimeStampedModel):
     context_path = models.CharField(max_length=120, blank=True)
     context_target_type = models.CharField(max_length=40, blank=True)
     context_target_id = models.CharField(max_length=64, blank=True)
+    state = models.JSONField(default=dict, blank=True)
 
     class Meta:
         ordering = ["-updated_at"]

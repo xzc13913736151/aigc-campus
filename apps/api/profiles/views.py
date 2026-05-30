@@ -4,7 +4,10 @@ from uuid import uuid4
 from django.conf import settings
 from django.core.files.storage import default_storage
 from rest_framework import generics, parsers, permissions, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+
+from common.uploads import validate_uploaded_image
 
 from .models import Profile
 from .serializers import ProfileSerializer
@@ -26,8 +29,11 @@ class MyProfileAvatarUploadAPIView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         profile = request.user.profile
         upload = request.FILES.get("file")
-        if upload is None:
-            return Response({"detail": "Avatar file is required."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_uploaded_image(upload, max_size=3 * 1024 * 1024, label="头像")
+        except ValidationError as exc:
+            detail = exc.detail[0] if isinstance(exc.detail, list) else exc.detail
+            return Response({"detail": detail}, status=status.HTTP_400_BAD_REQUEST)
 
         extension = Path(upload.name).suffix.lower() or ".png"
         saved_path = default_storage.save(f"avatars/{request.user.id}/{uuid4().hex}{extension}", upload)

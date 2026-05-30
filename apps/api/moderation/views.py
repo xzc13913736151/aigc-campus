@@ -5,11 +5,12 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Block, Report
+from .models import Block, ModerationActionLog, Report
 from .serializers import (
     AdminReportReviewSerializer,
     AdminReportSerializer,
     BlockSerializer,
+    ModerationActionLogSerializer,
     ReportSerializer,
 )
 
@@ -72,6 +73,19 @@ class AdminReportDetailAPIView(generics.RetrieveUpdateAPIView):
         if self.request.method in permissions.SAFE_METHODS:
             return AdminReportSerializer
         return AdminReportReviewSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
+
+class AdminModerationActionLogListAPIView(generics.ListAPIView):
+    serializer_class = ModerationActionLogSerializer
+    permission_classes = [IsAdminRole]
+
+    def get_queryset(self):
+        return ModerationActionLog.objects.select_related("actor", "report").all()[:30]
 
 
 class BlockListCreateAPIView(generics.ListCreateAPIView):

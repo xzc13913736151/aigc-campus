@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 import requests
@@ -192,3 +193,23 @@ def call_agent(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | Non
     if not content:
         raise AgentCallError("Agent returned an empty response.")
     return content
+
+
+def _strip_json_fence(content: str) -> str:
+    clean = content.strip()
+    if not clean.startswith("```"):
+        return clean
+    clean = re.sub(r"^```(?:json)?\s*", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"\s*```$", "", clean)
+    return clean.strip()
+
+
+def call_agent_json(messages: list[dict[str, Any]], schema_name: str = "agent_json") -> dict[str, Any]:
+    content = _strip_json_fence(call_agent(messages))
+    try:
+        data = json.loads(content)
+    except ValueError as exc:
+        raise AgentCallError(f"{schema_name} response is not valid JSON.") from exc
+    if not isinstance(data, dict):
+        raise AgentCallError(f"{schema_name} response must be a JSON object.")
+    return data

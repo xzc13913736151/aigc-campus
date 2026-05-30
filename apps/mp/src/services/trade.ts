@@ -65,6 +65,10 @@ export function updateTradePost(id: string, payload: Partial<TradePost>) {
   })
 }
 
+export function updateTradePostStatus(id: string, status: TradePost['status']) {
+  return updateTradePost(id, { status })
+}
+
 export function deleteTradePost(id: string) {
   return request<void>(`trade/posts/${id}/`, {
     method: 'DELETE',

@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AssistantActionProposal, AssistantMessage, AssistantSession
+from .orchestrator import plan_assistant_turn
 from .serializers import (
     AssistantActionExecuteResponseSerializer,
     AssistantActionProposalSerializer,
@@ -13,8 +14,8 @@ from .serializers import (
     AssistantSessionCreateSerializer,
     AssistantSessionSerializer,
 )
-from .services import build_assistant_reply_with_history, default_session_title
-from .skills import create_action_proposal, execute_action
+from .services import default_session_title
+from .skills import execute_action
 
 
 class AssistantSessionListCreateAPIView(generics.ListCreateAPIView):
@@ -67,29 +68,45 @@ class AssistantMessageListCreateAPIView(generics.ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
         previous_messages = list(session.messages.order_by("-created_at")[:8])
         previous_messages.reverse()
+        AssistantActionProposal.objects.filter(
+            session=session,
+            user=request.user,
+            status=AssistantActionProposal.Status.PENDING,
+            expires_at__gt=timezone.now(),
+        ).update(status=AssistantActionProposal.Status.DISMISSED, updated_at=timezone.now())
 
         user_message = AssistantMessage.objects.create(
             session=session,
             role=AssistantMessage.Role.USER,
             body=serializer.validated_data["body"],
         )
+        previous_messages.append(user_message)
+        assistant_body, proposal_payloads, next_state = plan_assistant_turn(
+            request.user,
+            session,
+            serializer.validated_data["body"],
+            previous_messages[:-1],
+        )
         assistant_message = AssistantMessage.objects.create(
             session=session,
             role=AssistantMessage.Role.ASSISTANT,
-            body=build_assistant_reply_with_history(session.page_type, serializer.validated_data["body"], previous_messages),
+            body=assistant_body,
         )
-        proposal_data = create_action_proposal(request.user, session, assistant_message, serializer.validated_data["body"])
-        action = AssistantActionProposal.objects.create(**proposal_data)
+        actions = [
+            AssistantActionProposal.objects.create(**{**proposal_data, "message": assistant_message})
+            for proposal_data in proposal_payloads
+        ]
         if not session.title or session.title == default_session_title(session.page_type):
             session.title = serializer.validated_data["body"][:24]
-        session.save()
+        session.state = next_state
+        session.save(update_fields=["title", "state", "updated_at"])
 
         return Response(
             {
                 "user_message": AssistantMessageSerializer(user_message).data,
                 "assistant_message": AssistantMessageSerializer(assistant_message).data,
                 "session": AssistantSessionSerializer(session).data,
-                "actions": AssistantActionProposalSerializer([action], many=True).data,
+                "actions": AssistantActionProposalSerializer(actions, many=True).data,
             },
             status=status.HTTP_201_CREATED,
         )

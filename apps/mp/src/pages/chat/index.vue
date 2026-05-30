@@ -17,37 +17,40 @@
       scroll-y
       enhanced
       :show-scrollbar="false"
-      :scroll-into-view="scrollIntoView"
+      :scroll-top="scrollTop"
     >
-      <view
-        v-for="message in messages"
-        :id="`message-${message.id}`"
-        :key="message.id"
-        class="message-row"
-        :class="{ mine: isMine(message.sender.id) }"
-      >
-        <view class="avatar">
-          <text>{{ getSenderInitial(message.sender) }}</text>
+      <block v-for="item in messageItems" :key="item.key">
+        <view v-if="item.type === 'time'" class="time-divider">
+          <text>{{ item.label }}</text>
         </view>
-        <view class="message-stack">
-          <view class="message-bubble" :class="{ image: isImageMessage(message), withdrawn: message.is_withdrawn }">
-            <image
-              v-if="isImageMessage(message) && !message.is_withdrawn"
-              class="message-image"
-              :src="getImageUrl(message.image_url)"
-              mode="widthFix"
-              @tap="previewMessageImage(message.image_url)"
-            />
-            <text v-else class="bubble-text" :class="{ withdrawn: message.is_withdrawn }">
-              {{ getMessageBody(message) }}
-            </text>
+        <view
+          v-else
+          :id="`message-${item.message.id}`"
+          class="message-row"
+          :class="{ mine: isMine(item.message.sender.id) }"
+        >
+          <view class="avatar">
+            <text>{{ getSenderInitial(item.message.sender) }}</text>
           </view>
-          <view class="message-meta">
-            <text>{{ formatDate(message.created_at) }}</text>
-            <text v-if="isMine(message.sender.id)">{{ message.is_read ? '已读' : '未读' }}</text>
+          <view class="message-stack">
+            <view class="message-bubble" :class="{ image: isImageMessage(item.message), withdrawn: item.message.is_withdrawn }">
+              <image
+                v-if="isImageMessage(item.message) && !item.message.is_withdrawn"
+                class="message-image"
+                :src="getImageUrl(item.message.image_url)"
+                mode="widthFix"
+                @tap="previewMessageImage(item.message.image_url)"
+              />
+              <text v-else class="bubble-text" :class="{ withdrawn: item.message.is_withdrawn }">
+                {{ getMessageBody(item.message) }}
+              </text>
+            </view>
+            <view class="message-meta">
+              <text v-if="isMine(item.message.sender.id)">{{ item.message.is_read ? '已读' : '未读' }}</text>
+            </view>
           </view>
         </view>
-      </view>
+      </block>
       <view id="chat-bottom-anchor" class="chat-bottom-anchor" />
     </scroll-view>
 
@@ -125,7 +128,8 @@ const reconnecting = ref(false)
 const peerOnline = ref(false)
 const peerTyping = ref(false)
 const hidingThread = ref(false)
-const scrollIntoView = ref('')
+const scrollTop = ref(0)
+const scrollBottomSeed = ref(100000)
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let peerTypingTimer: ReturnType<typeof setTimeout> | null = null
@@ -143,6 +147,26 @@ const compactSocketStatusText = computed(() => {
   return reconnecting.value ? '正在重连' : '未连接'
 })
 const canSendText = computed(() => Boolean(messageBody.value.trim()) && !sending.value && Boolean(threadId.value))
+const messageItems = computed(() => {
+  const items: Array<
+    | { type: 'time'; key: string; label: string }
+    | { type: 'message'; key: string; message: ChatMessage }
+  > = []
+  let lastTimestamp = 0
+  messages.value.forEach((message) => {
+    const timestamp = new Date(message.created_at).getTime()
+    if (!lastTimestamp || timestamp - lastTimestamp > 5 * 60 * 1000) {
+      items.push({
+        type: 'time',
+        key: `time-${message.id}`,
+        label: formatDate(message.created_at),
+      })
+    }
+    items.push({ type: 'message', key: message.id, message })
+    lastTimestamp = timestamp
+  })
+  return items
+})
 
 watch(
   () => messages.value.length,
@@ -480,9 +504,8 @@ function previewMessageImage(url: string) {
 
 async function scrollToBottom() {
   await nextTick()
-  scrollIntoView.value = ''
-  await nextTick()
-  scrollIntoView.value = 'chat-bottom-anchor'
+  scrollBottomSeed.value += 100000
+  scrollTop.value = scrollBottomSeed.value
 }
 
 function formatDate(value: string) {
@@ -556,6 +579,20 @@ function formatDate(value: string) {
   align-items: flex-start;
   gap: 14rpx;
   margin-bottom: 24rpx;
+}
+
+.time-divider {
+  display: flex;
+  justify-content: center;
+  margin: 8rpx 0 22rpx;
+}
+
+.time-divider text {
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(16, 33, 51, 0.07);
+  color: #8b929a;
+  font-size: 20rpx;
 }
 
 .message-row.mine {
@@ -644,6 +681,7 @@ function formatDate(value: string) {
   gap: 12rpx;
   color: #9aa1aa;
   font-size: 20rpx;
+  min-height: 24rpx;
 }
 
 .empty-chat {
@@ -739,6 +777,6 @@ function formatDate(value: string) {
 }
 
 .chat-bottom-anchor {
-  height: 1rpx;
+  height: 18rpx;
 }
 </style>

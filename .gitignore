@@ -1,23 +1,20 @@
 .DS_Store
 .idea/
 .vscode/
+.local/
 
 # Node
 node_modules/
 .pnpm-store/
-.next/
 apps/mp/dist/
 coverage/
-playwright-report/
-test-results/
 *.tsbuildinfo
+*.log
 
 # Python
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
 .venv/
 venv/
 *.egg-info/

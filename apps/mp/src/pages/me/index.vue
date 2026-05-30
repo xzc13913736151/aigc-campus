@@ -28,6 +28,9 @@
         <view class="status-chip" :class="{ complete: profileComplete }">
           <text>{{ profileComplete ? '资料已完善' : '待补全资料' }}</text>
         </view>
+        <view v-if="isAdmin" class="status-chip admin-chip">
+          <text>管理员</text>
+        </view>
       </view>
 
       <view v-if="hasToken && profile.headline" style="height: 20rpx" />
@@ -111,6 +114,7 @@
           <button class="btn btn-ghost" @tap="goForum">查看我的帖子</button>
           <button class="btn btn-ghost" @tap="goBlocks">黑名单管理</button>
           <button class="btn btn-ghost" @tap="goAssistant">AI 助手</button>
+          <button v-if="isAdmin" class="btn btn-secondary" @tap="goAdmin">管理后台</button>
         </view>
       </view>
 
@@ -161,11 +165,12 @@ import { fetchForumPosts, fetchMyForumPosts } from '../../services/forum'
 import { fetchMyBlocks } from '../../services/moderation'
 import { fetchMyProfile } from '../../services/profile'
 import { fetchMyTeammatePosts } from '../../services/teammates'
-import { ensureAuthenticated, isAuthenticated, logoutUser, redirectToLogin } from '../../utils/auth'
+import { currentUser, ensureAuthenticated, isAuthenticated, logoutUser, redirectToLogin } from '../../utils/auth'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
 const hasToken = computed(() => isAuthenticated.value)
+const isAdmin = computed(() => currentUser.value?.role === 'admin')
 const avatarUrl = ref('')
 const profileComplete = ref(false)
 const forumCount = ref(0)
@@ -201,7 +206,13 @@ const displayName = computed(() => {
   if (!hasToken.value) {
     return '未登录'
   }
-  return profile.nickname || '微信用户'
+  if (profile.nickname) {
+    return profile.nickname
+  }
+  if (isAdmin.value) {
+    return '管理员'
+  }
+  return currentUser.value?.email || '微信用户'
 })
 
 const displayInitial = computed(() => displayName.value.trim().slice(0, 1) || '我')
@@ -209,6 +220,9 @@ const displayInitial = computed(() => displayName.value.trim().slice(0, 1) || '�
 const helperText = computed(() => {
   if (!hasToken.value) {
     return '登录后可以同步头像昵称、完善资料，并进入你的个人中心。'
+  }
+  if (isAdmin.value) {
+    return '当前账号拥有内容审核台权限，可直接处理举报和违规内容。'
   }
   return profileComplete.value
     ? '当前资料已经可以用于论坛、组队、匹配和聊天场景。'
@@ -238,7 +252,7 @@ onShow(async () => {
     profile.major = myProfile.major ?? ''
     profile.grade = myProfile.grade ?? ''
     profile.interests = myProfile.interests ?? []
-    profileComplete.value = Boolean(myProfile.headline.trim() && myProfile.major.trim() && myProfile.grade.trim())
+    profileComplete.value = isAdmin.value || Boolean(myProfile.headline.trim() && myProfile.major.trim() && myProfile.grade.trim())
     forumCount.value = myForumPosts.length
     teamCount.value = myTeamPosts.length
     blockCount.value = blocks.length
@@ -320,6 +334,13 @@ function goAssistant() {
   navigateTo('/pages/assistant/index')
 }
 
+function goAdmin() {
+  if (!ensureAuthenticated('/pages/admin/index')) {
+    return
+  }
+  navigateTo('/pages/admin/index')
+}
+
 async function logout() {
   await logoutUser()
   resetLocalState()
@@ -389,6 +410,11 @@ async function logout() {
 .claw-chip {
   background: rgba(241, 107, 79, 0.12);
   color: #f16b4f;
+}
+
+.admin-chip {
+  background: rgba(16, 33, 51, 0.12);
+  color: #102133;
 }
 
 .summary-grid {

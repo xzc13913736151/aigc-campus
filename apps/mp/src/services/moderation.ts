@@ -1,9 +1,9 @@
-import type { BlockItem, ModerationReport, ModerationReportStats } from '../types/api'
+import type { BlockItem, ModerationActionLog, ModerationReport, ModerationReportStats } from '../types/api'
 import { request } from '../utils/request'
 import { buildQuery } from '../utils/query'
 
 export function createModerationReport(payload: {
-  target_type: 'user' | 'dating_profile' | 'team_post' | 'forum_post' | 'comment'
+  target_type: 'user' | 'dating_profile' | 'team_post' | 'forum_post' | 'comment' | 'trade_post'
   target_id: string
   reason: string
   details?: string
@@ -57,10 +57,14 @@ export function fetchModerationReports(params?: { status?: string; target_type?:
 
 export function reviewModerationReport(
   reportId: string,
-  payload: { status: string; action?: 'none' | 'delete_forum_post' | 'delete_forum_comment' },
+  payload: { status: string; action?: 'none' | 'delete_forum_post' | 'delete_forum_comment' | 'close_trade_post' },
 ) {
   return request<{ status: string }>(`moderation/admin/reports/${reportId}/`, {
     method: 'PATCH',
     data: payload,
   })
+}
+
+export function fetchModerationActionLogs() {
+  return request<ModerationActionLog[]>('moderation/admin/action-logs/')
 }

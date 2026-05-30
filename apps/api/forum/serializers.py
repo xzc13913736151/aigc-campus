@@ -2,6 +2,7 @@ from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
 
 from accounts.serializers import UserSerializer
+from common.uploads import validate_uploaded_image
 from .models import ForumComment, ForumCommentLike, ForumPost, ForumPostImage
 
 
@@ -135,3 +136,6 @@ class ForumPostImageSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.image.url)
         return obj.image.url
+
+    def validate_image(self, value):
+        return validate_uploaded_image(value, label="帖子图片")
