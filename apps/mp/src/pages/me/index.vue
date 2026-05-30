@@ -3,7 +3,9 @@
     <view class="card hero-card">
       <view class="hero-head">
         <view class="avatar-wrap">
-          <image v-if="avatarUrl" class="avatar" :src="avatarUrl" mode="aspectFill" />
+          <view v-if="avatarUrl" class="avatar">
+            <CachedImage :src="avatarUrl" mode="aspectFill" />
+          </view>
           <view v-else class="avatar avatar-placeholder">
             <text>{{ displayInitial }}</text>
           </view>
@@ -161,6 +163,7 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import CachedImage from '../../components/CachedImage.vue'
 import { fetchForumPosts, fetchMyForumPosts } from '../../services/forum'
 import { fetchMyBlocks } from '../../services/moderation'
 import { fetchMyProfile } from '../../services/profile'

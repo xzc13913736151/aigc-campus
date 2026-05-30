@@ -20,9 +20,6 @@
             <text class="match-tag">学习搭子</text>
           </view>
         </view>
-        <view class="match-arrow">
-          <text>></text>
-        </view>
       </view>
 
       <view class="match-card" @tap="goDating">
@@ -38,9 +35,6 @@
             <text class="match-tag">缘分匹配</text>
           </view>
         </view>
-        <view class="match-arrow">
-          <text>></text>
-        </view>
       </view>
 
       <view class="match-card" @tap="goTrade">
@@ -55,9 +49,6 @@
             <text class="match-tag">物品交换</text>
             <text class="match-tag">技能服务</text>
           </view>
-        </view>
-        <view class="match-arrow">
-          <text>></text>
         </view>
       </view>
     </view>
@@ -195,12 +186,6 @@ function goTrade() {
   background: rgba(16, 33, 51, 0.06);
   color: #102133;
   font-size: 20rpx;
-}
-
-.match-arrow {
-  color: #c0c4cc;
-  font-size: 32rpx;
-  flex-shrink: 0;
 }
 
 .tips-card {

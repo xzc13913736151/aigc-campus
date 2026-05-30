@@ -25,14 +25,14 @@
         </view>
         <view v-if="post.image_urls.length" style="height: 18rpx" />
         <view v-if="post.image_urls.length" class="detail-image-grid">
-          <image
+          <view
             v-for="url in post.image_urls"
             :key="url"
             class="detail-image"
-            :src="url"
-            mode="aspectFill"
             @tap="previewImages(post.image_urls, url)"
-          />
+          >
+            <CachedImage :src="url" mode="aspectFill" />
+          </view>
         </view>
         <view style="height: 18rpx" />
         <view class="stat-row">
@@ -154,12 +154,14 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
+import CachedImage from '../../components/CachedImage.vue'
 import type { ForumPost, UserSummary } from '../../types/api'
 import { createForumComment, deleteForumPost, fetchForumPostDetail, toggleForumCommentLike, toggleForumPostLike } from '../../services/forum'
 import { createModerationReport } from '../../services/moderation'
 import { currentUser, ensureAuthenticated, isAuthenticated, redirectToLogin } from '../../utils/auth'
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { navigateTo } from '../../utils/navigation'
+import { getMediaUrl, getMediaUrls } from '../../utils/media'
 import { showToast } from '../../utils/ui'
 
 const postId = ref('')
@@ -423,7 +425,8 @@ function formatDate(value: string) {
 }
 
 function previewImages(urls: string[], current: string) {
-  uni.previewImage({ current, urls })
+  const mediaUrls = getMediaUrls(urls)
+  uni.previewImage({ current: getMediaUrl(current), urls: mediaUrls })
 }
 </script>
 

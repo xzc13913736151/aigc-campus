@@ -71,14 +71,14 @@
             </view>
           </view>
           <view v-if="imageUrls.length" class="image-grid">
-            <image
+            <view
               v-for="url in imageUrls"
               :key="url"
               class="post-image"
-              :src="url"
-              mode="aspectFill"
               @tap="previewImages(url)"
-            />
+            >
+              <CachedImage :src="url" mode="aspectFill" />
+            </view>
           </view>
           <view
             class="editor-button image-picker-button"
@@ -117,8 +117,10 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
+import CachedImage from '../../components/CachedImage.vue'
 import { createForumPost, fetchForumPostDetail, updateForumPost, uploadForumPostImage } from '../../services/forum'
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
+import { getMediaUrl, getMediaUrls } from '../../utils/media'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
@@ -265,9 +267,10 @@ function previewImages(current?: string) {
   if (!imageUrls.value.length) {
     return
   }
+  const mediaUrls = getMediaUrls(imageUrls.value)
   uni.previewImage({
-    current: current ?? imageUrls.value[0],
-    urls: imageUrls.value,
+    current: getMediaUrl(current ?? imageUrls.value[0]),
+    urls: mediaUrls,
   })
 }
 

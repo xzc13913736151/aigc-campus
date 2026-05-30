@@ -1,450 +1,274 @@
-# CampusClaw - 校园交友与协作平台
+# CampusClaw
 
-CampusClaw 是一个基于微信小程序的校园交友与协作平台，支持论坛、组队匹配、恋爱匹配、交易匹配等功能。
+CampusClaw 是一个微信小程序校园社交与协作平台，包含论坛、组队匹配、恋爱匹配、交易匹配、聊天、个人资料、黑名单、举报审核和 AI 助手能力。
+
+当前项目用于比赛演示，推荐使用“电脑本地后端 + 手机同 Wi-Fi 预览”的方式运行。
 
 ## 目录
 
-- [一、先决条件](#一先决条件)
-- [二、后端启动](#二后端启动)
-- [三、小程序前端启动](#三小程序前端启动)
-- [四、微信开发者工具配置](#四微信开发者工具配置)
-- [五、验证功能是否正常](#五验证功能是否正常)
-- [六、管理员账号与后台](#六管理员账号与后台)
-- [七、常见问题](#七常见问题)
-
----
-
-## 一、先决条件
-
-开始之前，你需要安装以下软件：
-
-### 1.1 Python 3.12+
-
-官网下载：https://www.python.org/downloads/
-
-安装时**务必勾选** "Add Python to PATH"
-
-验证安装：
-
-```powershell
-python --version
-```
-
-### 1.2 Node.js 20+
-
-官网下载：https://nodejs.org/
-
-验证安装：
-
-```powershell
-node -v
-npm -v
-```
-
-### 1.3 Anaconda（推荐）
-
-官网下载：https://www.anaconda.com/download
-
-创建项目环境：
-
-```powershell
-conda create -n pairup python=3.12 -y
-conda activate pairup
-```
-
-### 1.4 微信开发者工具
-
-官网下载：https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html
-
-### 1.5 Git（可选）
-
-官网下载：https://git-scm.com/download/win
-
----
-
-## 二、后端启动
-
-### 2.1 安装后端依赖
-
-**方式一：使用 conda 环境（推荐）**
-
-```powershell
-# 激活 conda 环境
-conda activate aigc
-
-# 进入后端目录
-cd apps/api
-
-# 安装依赖
-pip install django djangorestframework djangorestframework-simplejwt django-cors-headers channels channels-redis drf-spectacular Pillow dj-database-url psycopg2-binary redis django-filter
-
-# 安装 ASGI 服务器（用于实时推送，必须）
-pip install daphne
-```
-
-**方式二：直接安装（如果没有 conda）**
-
-```powershell
-cd apps/api
-pip install -r requirements.txt
-pip install daphne
-```
-
-### 2.2 创建数据库（首次需要）
-
-```powershell
-cd apps/api
-
-# 设置环境变量（Windows PowerShell）
-$env:DEBUG='1'
-$env:SECRET_KEY='pairup-local-dev-secret'
-
-# 创建数据库表
-python manage.py migrate
-
-# 可选：创建管理员账号
-python manage.py createsuperuser
-```
-
-`createsuperuser` 创建的是本地数据库里的管理员账号，主要用于 Django Admin 和小程序内置审核台。创建时填写的 `Email` 和 `Password` 就是后续本地邮箱密码登录使用的账号。
-
-### 2.3 启动后端服务
-
-#### 方式一：普通模式（无实时推送，推荐新手）
-
-```powershell
-cd apps/api
-$env:DEBUG='1'
-$env:SECRET_KEY='pairup-local-dev-secret'
-python manage.py runserver
-```
-
-启动成功后访问：
-
-- API 地址：http://127.0.0.1:8000/api/v1/
-- Swagger 文档：http://127.0.0.1:8000/api/docs/
-- Django Admin：http://127.0.0.1:8000/admin/
-
-#### 方式二：ASGI 模式（支持实时推送，必须）
-
-**为什么要开这个？**
-
-- 实时聊天消息推送
-- 实时通知
-- 正在输入提示
-- 在线状态显示
-
-```powershell
-cd apps/api
-$env:DEBUG='1'
-$env:SECRET_KEY='pairup-local-dev-secret'
-daphne -b 0.0.0.0 -p 8000 config.asgi:application
-```
-
-> **注意**：两种方式不能同时运行，端口都是 8000。
-
----
-
-## 三、小程序前端启动
-
-### 3.1 安装前端依赖
-
-```powershell
-# 在项目根目录（不是 apps/mp）
-cmd /c corepack enable
-cmd /c corepack pnpm install
-```
-
-### 3.2 构建小程序
-
-uni-app 有两种构建模式：
-
-| 模式     | 命令              | 产物目录               | 用途             |
-| -------- | ----------------- | ---------------------- | ---------------- |
-| 开发模式 | `dev:mp-weixin`   | `dist/dev/mp-weixin`   | 热重载，方便调试 |
-| 生产模式 | `build:mp-weixin` | `dist/build/mp-weixin` | 压缩混淆，体积小 |
-
-```powershell
-# 开发模式（推荐，日常开发用）
-cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
-
-# 生产模式（发布时用）
-cmd /c corepack pnpm --dir apps/mp build:mp-weixin
-```
-
----
-
-## 四、微信开发者工具配置
-
-### 4.1 打开项目
-
-1. 打开微信开发者工具
-2. 点击"导入项目"
-3. 选择目录：
-   - 开发模式：`apps/mp/dist/dev/mp-weixin`
-   - 生产模式：`apps/mp/dist/build/mp-weixin`
-4. AppID 填你的小程序 AppID（测试号也可以）
-
-### 4.2 重要配置
-
-在微信开发者工具中：
-
-1. **勾选"不校验合法域名"**（开发环境用）
-   - 设置 → 详情 → 本地设置 → 勾选
-
-2. **勾选"关闭域名校验"**（如果遇到问题）
-   - 设置 → 通用设置 → 勾选
-
-### 4.3 刷新最新代码
-
-如果你改了代码但小程序没更新：
-
-1. 确认运行的构建命令：
-   - 运行 `dev:mp-weixin` → 打开 `dist/dev/mp-weixin`
-   - 运行 `build:mp-weixin` → 打开 `dist/build/mp-weixin`
-
-2. 在微信开发者工具中点击"编译"按钮
-
-3. 如果还不行，清除缓存：
-   - 工具 → 清除缓存 → 全部清除
-   - 然后重新编译
-
----
-
-## 五、验证功能是否正常
-
-后端和小程序都启动后，测试以下地址：
-
-### 5.1 后端 API 测试
-
-在浏览器或 Postman 访问：
-
-```
-GET http://127.0.0.1:8000/api/v1/forum/posts/
-```
-
-如果返回帖子列表，说明后端正常。
-
-### 5.2 小程序测试
-
-1. 登录微信小程序
-2. 进入"论坛"页面，看帖子列表
-3. 进入"匹配" tab，选择任意匹配类型
-4. 进入"我的"页面，确认登录状态
-
-### 5.3 近期功能验证
-
-- 头像、论坛图片、聊天图片上传：正常图片应成功；超大、非图片或不支持格式会返回中文错误。
-- 聊天页：图片消息可点击预览；消息超过一屏后自动滚到底部；间隔超过 5 分钟会出现时间分割。
-- 交易页：我的交易可以切换出售中、已预定、已完成、已关闭；非作者可举报交易。
-- AI 助手：独立 AI 页和半屏 AI 会在新消息、思考气泡、动作卡片出现后稳定滚到底部。
-
----
-
-## 六、管理员账号与后台
-
-### 6.1 创建管理员账号
-
-首次本地开发时执行：
-
-```powershell
-cd apps/api
-python manage.py createsuperuser
-```
-
-如果你使用 conda 环境：
-
-```powershell
-conda run -n aigc python apps/api/manage.py createsuperuser
-```
-
-如果当前已经在 `apps/api` 目录：
-
-```powershell
-conda run -n aigc python manage.py createsuperuser
-```
-
-创建后的管理员满足 `role=admin` 和 `is_staff=True`，可以访问 Django Admin 和小程序审核台。
-
-### 6.2 登录管理员账号
-
-小程序登录页保留微信登录，同时提供“本地调试 / 管理员”的邮箱密码登录表单。
-
-使用 `createsuperuser` 时填写的邮箱和密码登录即可。管理员账号会自动跳过普通用户资料补全，并优先进入小程序审核台。
-
-### 6.3 管理员当前功能
-
-- 查看举报统计：全部、待处理、处理中、已解决、已驳回。
-- 筛选举报：论坛帖子、论坛评论、交易帖子。
-- 处理举报：设为处理中、标记解决、驳回举报。
-- 内容处理：删除违规论坛帖子、删除违规评论、关闭违规交易帖子。
-- 操作日志：展示最近审核操作，例如删除帖子、删除评论、关闭交易。
-- Django Admin 入口：可复制后台地址进入更完整的 Django 管理界面。
-
-### 6.4 管理功能测试流程
-
-1. 用普通账号发布一条交易帖子。
-2. 用另一个非作者账号，或本地可用的测试账号，在交易页点击“举报”。
-3. 用管理员邮箱密码登录小程序。
-4. 进入“我的”页，点击“管理后台”。
-5. 在审核台选择“交易举报”。
-6. 点击“关闭交易并结案”。
-7. 查看“最近审核操作”，确认出现“关闭交易帖子”。
-8. 回到交易广场，确认被关闭的交易不再公开展示。
-
----
-
-## 七、常见问题
-
-### Q1: `pnpm` 命令找不到
-
-Windows PowerShell 报错 "pnpm 无法识别"，改用：
-
-```powershell
-cmd /c corepack pnpm install
-cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
-```
-
-### Q2: `python` 命令找不到
-
-说明 Python 没添加到 PATH，重装 Python 时勾选 "Add Python to PATH"。
-
-或者用完整路径：
-
-```powershell
-C:\Users\你的用户名\AppData\Local\Programs\Python\Python312\python.exe
-```
-
-### Q3: `pip` 命令找不到
-
-```powershell
-python -m pip install xxx
-```
-
-### Q4: `daphne` 安装失败
-
-```powershell
-pip install daphne
-```
-
-如果网络不行，用国内镜像：
-
-```powershell
-pip install daphne -i https://pypi.tuna.tsinghua.edu.cn/simple
-```
-
-### Q5: 数据库报错 "no such table"
-
-需要先迁移数据库：
-
-```powershell
-cd apps/api
-python manage.py migrate
-```
-
-### Q6: WebSocket 连接失败（`ws://127.0.0.1:8000/ws/...`）
-
-这是正常的，如果你没启动 ASGI 服务器（daphne）。**不影响发帖、匹配等核心功能**。
-
-只是聊天不会有实时推送，需要手动刷新。
-
-如果需要实时功能，启动时用：
-
-```powershell
-daphne -b 0.0.0.0 -p 8000 config.asgi:application
-```
-
-### Q7: 头像不显示（HTTP 警告）
-
-微信要求 HTTPS，本地开发时可以用 HTTP，不影响功能。
-
-### Q8: 修改代码后小程序没变化
-
-1. 确认构建命令和打开的目录是否匹配
-2. 点击微信开发者工具的"编译"按钮
-3. 清除缓存：工具 → 清除缓存 → 全部清除
-
-### Q9: 微信登录不了
-
-需要配置真实的微信小程序 AppID：
-
-- 小程序端：`apps/mp/src/manifest.json`
-- 后端：`.env` 文件中的 `WECHAT_MINIAPP_APPID` 和 `WECHAT_MINIAPP_SECRET`
-
-没有真实 AppID 的话，可以用测试号体验部分功能。
-
----
-
-## 快速启动命令汇总
-
-### 完整启动（带实时推送）
-
-```powershell
-# 终端 1：后端（带实时推送）
-cd apps/api
-$env:DEBUG='1'
-$env:SECRET_KEY='pairup-local-dev-secret'
-daphne -b 0.0.0.0 -p 8000 config.asgi:application
-
-# 终端 2：前端
-cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
-
-# 终端 3：打开微信开发者工具，导入 dist/dev/mp-weixin 目录
-```
-
-### 简化启动（无实时推送）
-
-```powershell
-# 终端 1：后端
-cd apps/api
-$env:DEBUG='1'
-$env:SECRET_KEY='pairup-local-dev-secret'
-python manage.py runserver
-
-# 终端 2：前端
-cmd /c corepack pnpm --dir apps/mp dev:mp-weixin
-
-# 微信开发者工具导入 dist/dev/mp-weixin
-```
-
----
-
-## 项目结构
-
-```
+- [一、项目结构](#一项目结构)
+- [二、比赛演示启动方式](#二比赛演示启动方式)
+- [三、小程序构建与预览](#三小程序构建与预览)
+- [四、常见问题](#四常见问题)
+- [五、上线前说明](#五上线前说明)
+
+## 一、项目结构
+
+```text
 aigc-campus-main/
-├── apps/
-│   ├── api/              # Django 后端
-│   │   ├── accounts/     # 用户账户
-│   │   ├── assistant/    # AI 助手
-│   │   ├── chat/        # 聊天
-│   │   ├── common/      # 公共模型
-│   │   ├── dating/      # 恋爱匹配
-│   │   ├── forum/      # 论坛
-│   │   ├── moderation/  # 内容审核
-│   │   ├── notifications/  # 通知
-│   │   ├── profiles/    # 用户资料
-│   │   ├── teammates/   # 组队匹配
-│   │   ├── trade/       # 交易匹配
-│   │   └── config/     # 配置
-│   └── mp/              # 微信小程序前端
-│       └── src/
-│           ├── pages/  # 页面
-│           ├── components/  # 组件
-│           ├── services/    # API 服务
-│           └── utils/       # 工具
-├── docs/                # 文档
-└── docker-compose.yml   # Docker 配置
+  apps/
+    api/                 # Django 后端
+    mp/                  # uni-app 微信小程序
+  docs/                  # 项目文档
+  config.yaml            # AI 大模型配置
+  docker-compose.yml     # 可选数据库/Redis 配置
 ```
 
-## 技术栈
+关键目录：
 
-- **后端**：Django 5.2、Django REST framework、SimpleJWT、Channels
-- **数据库**：SQLite（开发）/ PostgreSQL（生产）
-- **实时通信**：Django Channels + WebSocket
-- **前端**：uni-app、Vue 3、TypeScript
-- **小程序**：微信小程序
+```text
+apps/api                 # 后端根目录
+apps/mp/src              # 小程序源码
+apps/mp/dist/build/mp-weixin  # 小程序构建产物，微信开发者工具导入这里
+```
 
----
+## 二、比赛演示启动方式
 
-有任何问题欢迎提交 Issue！
+### 1. 确认小程序请求地址
+
+当前小程序后端地址已配置为你的电脑局域网 IP：
+
+```ts
+export const BASE_URL = "http://10.130.55.19:8000/api/v1";
+```
+
+配置文件位置：
+
+```text
+apps/mp/src/constants/index.ts
+```
+
+如果你换了 Wi-Fi，电脑 IPv4 可能会变，需要重新运行：
+
+```powershell
+ipconfig
+```
+
+找到当前 Wi-Fi 的 IPv4 地址，然后把 `BASE_URL` 改成新的地址。
+
+### 2. 启动后端
+
+在项目根目录运行：
+
+```powershell
+conda activate aigc
+$env:DEBUG='1'
+$env:SECRET_KEY='campusclaw-local-dev-secret'
+$env:ALLOWED_HOSTS='localhost,127.0.0.1,10.130.55.19'
+python apps/api/manage.py runserver 0.0.0.0:8000
+```
+
+如果你已经在 `apps/api` 目录，运行：
+
+```powershell
+conda activate aigc
+$env:DEBUG='1'
+$env:SECRET_KEY='campusclaw-local-dev-secret'
+$env:ALLOWED_HOSTS='localhost,127.0.0.1,10.130.55.19'
+python manage.py runserver 0.0.0.0:8000
+```
+
+注意：这里必须是 `0.0.0.0:8000`，不要用 `127.0.0.1:8000`。否则手机访问不到电脑上的后端。
+
+### 3. 验证后端能被手机访问
+
+电脑浏览器先打开：
+
+```text
+http://10.130.55.19:8000/health/
+```
+
+手机和电脑连同一个 Wi-Fi 后，手机浏览器也打开：
+
+```text
+http://10.130.55.19:8000/health/
+```
+
+如果看到：
+
+```json
+{ "status": "ok" }
+```
+
+说明手机已经能连到后端。
+
+如果手机浏览器打不开，优先检查：
+
+- 手机和电脑是否在同一个 Wi-Fi。
+- 手机是否关掉了流量，只使用 Wi-Fi。
+- Django 是否用 `0.0.0.0:8000` 启动。
+- Windows 防火墙是否允许 Python 访问专用网络。
+- 当前电脑 IPv4 是否还是 `10.130.55.19`。
+
+### 4. 首次初始化数据库
+
+第一次运行项目，或者数据库为空时，在项目根目录执行：
+
+```powershell
+conda activate aigc
+$env:DEBUG='1'
+$env:SECRET_KEY='campusclaw-local-dev-secret'
+python apps/api/manage.py migrate
+```
+
+如需创建 Django 管理员账号：
+
+```powershell
+python apps/api/manage.py createsuperuser
+```
+
+## 三、小程序构建与预览
+
+### 1. 安装前端依赖
+
+项目根目录运行：
+
+```powershell
+cmd /c npx pnpm install
+```
+
+### 2. 构建微信小程序
+
+项目根目录运行：
+
+```powershell
+cmd /c npx pnpm --dir apps/mp build:mp-weixin
+```
+
+或
+
+```powershell
+cmd /c npx pnpm --dir apps/mp dev:mp-weixin
+```
+
+构建完成后，微信开发者工具导入：
+
+```text
+apps/mp/dist/build/mp-weixin
+```
+
+或
+
+```text
+apps/mp/dist/dev/mp-weixin
+```
+
+### 3. 微信开发者工具设置
+
+比赛演示时需要在微信开发者工具勾选：
+
+```text
+详情 -> 本地设置 -> 不校验合法域名、web-view、TLS 版本以及 HTTPS 证书
+```
+
+然后点击“编译”，再扫码预览。
+
+### 4. 演示时需要保持打开
+
+比赛演示时，电脑上至少保持这些东西开着：
+
+- Django 后端终端。
+- 微信开发者工具。
+- 如果要演示 AI，确保 `config.yaml` 中的大模型配置可用。
+
+电脑不能关机，后端终端不能关闭。
+
+## 四、常见问题
+
+### 1. 手机登录或请求一直失败
+
+先用手机浏览器打开：
+
+```text
+http://10.130.55.19:8000/health/
+```
+
+如果浏览器都打不开，就是局域网、IP、防火墙或后端监听问题。
+
+如果浏览器能打开，但小程序不行，检查：
+
+- `apps/mp/src/constants/index.ts` 里的 `BASE_URL` 是否正确。
+- 微信开发者工具是否勾选“不校验合法域名”。
+- 修改 `BASE_URL` 后是否重新构建小程序。
+
+### 2. 换 Wi-Fi 后不能用了
+
+电脑 IPv4 可能变了。重新运行：
+
+```powershell
+ipconfig
+```
+
+然后更新：
+
+```text
+apps/mp/src/constants/index.ts
+```
+
+再重新构建：
+
+```powershell
+cmd /c npx pnpm --dir apps/mp build:mp-weixin
+```
+
+### 3. AI 对话失败
+
+检查根目录的：
+
+```text
+config.yaml
+```
+
+需要配置可用的大模型：
+
+```yaml
+agent:
+  api_key: "你的 key"
+  base_url: "你的 base url"
+  model: "模型名"
+```
+
+如果网络慢，AI 可能会等待较久。当前前端已给 AI 请求设置较长超时时间。
+
+### 4. 图片不显示
+
+本地演示使用 HTTP，微信开发者工具可能会提示 HTTPS 警告。比赛演示时勾选“不校验合法域名、web-view、TLS 版本以及 HTTPS 证书”即可。
+
+### 5. 修改代码后小程序没变化
+
+执行：
+
+```powershell
+cmd /c npx pnpm --dir apps/mp build:mp-weixin
+```
+
+然后在微信开发者工具点击“编译”。
+
+如果还不变，微信开发者工具里执行：
+
+```text
+工具 -> 清除缓存 -> 全部清除
+```
+
+## 五、上线前说明
+
+当前 README 主要服务比赛演示。如果以后要正式发布给所有用户，需要做这些事情：
+
+- 把 Django 后端部署到公网服务器。
+- 配置正式数据库。
+- 准备域名和 HTTPS。
+- 把 `BASE_URL` 改成线上 HTTPS API 地址。
+- 在微信公众平台配置 request/upload/socket 合法域名。
+- 完成小程序备案、隐私协议、用户协议和审核提交。
+
+正式上线后，小程序前端由微信平台分发，不需要你的电脑一直开着；但后端服务器和数据库必须长期在线。

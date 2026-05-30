@@ -40,7 +40,9 @@
       <view class="card section">
         <view class="profile-head">
           <view class="avatar-wrap">
-            <image v-if="avatarPreview" class="avatar" :src="avatarPreview" mode="aspectFill" />
+            <view v-if="avatarPreview" class="avatar">
+              <CachedImage :src="avatarPreview" mode="aspectFill" />
+            </view>
             <view v-else class="avatar avatar-placeholder">
               <text>{{ nicknameInitial }}</text>
             </view>
@@ -168,6 +170,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 
+import CachedImage from '../../components/CachedImage.vue'
 import type { ProfileResponse } from '../../types/api'
 import { fetchMyProfile, updateMyProfile, uploadMyAvatar } from '../../services/profile'
 import {

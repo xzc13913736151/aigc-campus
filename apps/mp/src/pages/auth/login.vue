@@ -30,12 +30,13 @@
           {{ submitting ? '登录中...' : '使用微信一键登录' }}
         </button>
         <text class="helper">如果登录失败，请确认小程序 AppID 与后端微信配置一致后再重试。</text>
-        <view class="divider">
+        <view v-if="enablePasswordLogin" class="divider">
           <view class="divider-line" />
-          <text>本地调试 / 管理员</text>
+          <text>管理员登录</text>
           <view class="divider-line" />
         </view>
         <input
+          v-if="enablePasswordLogin"
           v-model="email"
           class="input"
           type="text"
@@ -43,6 +44,7 @@
           :disabled="submitting"
         />
         <input
+          v-if="enablePasswordLogin"
           v-model="password"
           class="input"
           type="password"
@@ -50,10 +52,9 @@
           :disabled="submitting"
           @confirm="handlePasswordLogin"
         />
-        <button class="btn btn-secondary" :disabled="submitting || !canPasswordLogin" @tap="handlePasswordLogin">
+        <button v-if="enablePasswordLogin" class="btn btn-secondary" :disabled="submitting || !canPasswordLogin" @tap="handlePasswordLogin">
           {{ submitting ? '登录中...' : '邮箱密码登录' }}
         </button>
-        <text class="helper">用于本地调试和管理员账号登录，正式微信链路仍使用上方按钮。</text>
       </view>
     </view>
   </view>
@@ -62,6 +63,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import { ENABLE_PASSWORD_LOGIN } from '../../constants'
 import { passwordLogin, wechatLogin } from '../../services/auth'
 import { applyLoginResult, completeLogin } from '../../utils/auth'
 import { showToast } from '../../utils/ui'
@@ -71,6 +73,7 @@ const submitting = ref(false)
 const errorMessage = ref('')
 const email = ref('')
 const password = ref('')
+const enablePasswordLogin = ENABLE_PASSWORD_LOGIN
 const canPasswordLogin = computed(() => Boolean(email.value.trim() && password.value))
 
 const infoItems = [

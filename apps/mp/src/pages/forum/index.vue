@@ -94,14 +94,14 @@
           show-scrollbar="false"
         >
           <view class="image-strip-inner">
-            <image
+            <view
               v-for="url in post.image_urls"
               :key="url"
               class="cover-image"
-              :src="url"
-              mode="aspectFill"
               @tap="previewImages(post.image_urls, url)"
-            />
+            >
+              <CachedImage :src="url" mode="aspectFill" />
+            </view>
           </view>
         </scroll-view>
 
@@ -173,6 +173,7 @@ import { computed, onMounted, ref } from "vue";
 import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 
 import BottomTabBar from "../../components/BottomTabBar.vue";
+import CachedImage from "../../components/CachedImage.vue";
 import type { ForumPost } from "../../types/api";
 import {
   fetchForumPosts,
@@ -186,6 +187,7 @@ import {
   redirectToLogin,
 } from "../../utils/auth";
 import { navigateTo } from "../../utils/navigation";
+import { getMediaUrl, getMediaUrls } from "../../utils/media";
 import { showToast } from "../../utils/ui";
 
 const categories = [
@@ -326,7 +328,8 @@ async function handleLike(postId: string) {
 }
 
 function previewImages(urls: string[], current: string) {
-  uni.previewImage({ current, urls });
+  const mediaUrls = getMediaUrls(urls);
+  uni.previewImage({ current: getMediaUrl(current), urls: mediaUrls });
 }
 
 function formatDate(value: string) {

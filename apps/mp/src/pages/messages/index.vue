@@ -65,7 +65,9 @@
         <view v-if="contactResults.length" class="contact-result-list">
           <view v-for="contact in contactResults" :key="contact.id" class="contact-card">
             <view class="contact-main">
-              <image v-if="contact.avatar_url" class="contact-avatar" :src="contact.avatar_url" mode="aspectFill" />
+              <view v-if="contact.avatar_url" class="contact-avatar">
+                <CachedImage :src="contact.avatar_url" mode="aspectFill" />
+              </view>
               <view v-else class="contact-avatar fallback">
                 <text>{{ getContactInitial(contact) }}</text>
               </view>
@@ -151,11 +153,9 @@
             <view style="height: 8rpx" />
             <text class="section-desc">帖子互动、聊天提醒和系统消息都会集中在这里，避免打断你主线聊天。</text>
           </view>
-          <view class="action-row">
-            <button class="btn btn-primary" :disabled="!notifications.length || unreadCount === 0" @tap="handleMarkAllRead">
-              全部已读
-            </button>
-          </view>
+          <button class="mark-all-read-button" :disabled="!notifications.length || unreadCount === 0" @tap="handleMarkAllRead">
+            全部已读
+          </button>
         </view>
         <view style="height: 20rpx" />
 
@@ -201,6 +201,7 @@ import { computed, ref } from 'vue'
 import { onHide, onPullDownRefresh, onReachBottom, onShow, onUnload } from '@dcloudio/uni-app'
 
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import CachedImage from '../../components/CachedImage.vue'
 import type { ChatThread, ContactSearchUser, NotificationItem } from '../../types/api'
 import { createChatThread, fetchChatThreads, hideChatThread } from '../../services/chat'
 import { searchContacts } from '../../services/auth'
@@ -738,6 +739,35 @@ function goForum() {
 .message-badge.read {
   background: rgba(16, 33, 51, 0.08);
   color: #6b7280;
+}
+
+.mark-all-read-button {
+  flex-shrink: 0;
+  min-width: 148rpx;
+  height: 58rpx;
+  min-height: 58rpx;
+  padding: 0 24rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #f16b4f;
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.mark-all-read-button[disabled] {
+  background: rgba(16, 33, 51, 0.1);
+  color: #8a929c;
+}
+
+.mark-all-read-button::after {
+  border: 0;
 }
 
 .action-row,

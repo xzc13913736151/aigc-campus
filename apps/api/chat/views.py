@@ -24,6 +24,13 @@ from .services import notify_chat_counterpart, push_chat_message, push_chat_read
 User = get_user_model()
 
 
+def run_best_effort(callback, *args, **kwargs):
+    try:
+        callback(*args, **kwargs)
+    except Exception:
+        return
+
+
 def canonical_thread_users(first, second):
     return (first, second) if str(first.id) < str(second.id) else (second, first)
 
@@ -138,8 +145,8 @@ class ChatMessageListCreateAPIView(generics.ListCreateAPIView):
             thread.hidden_for_user_b = False
             thread.save(update_fields=["updated_at", "hidden_for_user_a", "hidden_for_user_b"])
 
-        notify_chat_counterpart(thread, message)
-        push_chat_message(message)
+        run_best_effort(notify_chat_counterpart, thread, message)
+        run_best_effort(push_chat_message, message)
 
         response_serializer = ChatMessageSerializer(message, context=self.get_serializer_context())
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
@@ -169,8 +176,8 @@ class ChatImageMessageCreateAPIView(APIView):
         thread.hidden_for_user_b = False
         thread.save(update_fields=["updated_at", "hidden_for_user_a", "hidden_for_user_b"])
 
-        notify_chat_counterpart(thread, message)
-        push_chat_message(message)
+        run_best_effort(notify_chat_counterpart, thread, message)
+        run_best_effort(push_chat_message, message)
         response_serializer = ChatMessageSerializer(message, context={"request": request})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 

@@ -35,18 +35,28 @@
           <view class="message-stack">
             <view class="message-bubble" :class="{ image: isImageMessage(item.message), withdrawn: item.message.is_withdrawn }">
               <image
-                v-if="isImageMessage(item.message) && !item.message.is_withdrawn"
+                v-if="isImageMessage(item.message) && !item.message.is_withdrawn && !imageLoadFailed[item.message.id]"
                 class="message-image"
-                :src="getImageUrl(item.message.image_url)"
-                mode="widthFix"
-                @tap="previewMessageImage(item.message.image_url)"
+                :src="getDisplayImageUrl(item.message)"
+                mode="aspectFill"
+                @error="handleMessageImageError(item.message)"
+                @tap="previewMessageImage(item.message)"
               />
+              <view
+                v-else-if="isImageMessage(item.message) && !item.message.is_withdrawn"
+                class="image-fallback"
+                @tap="previewMessageImage(item.message)"
+              >
+                <text>点击查看图片</text>
+              </view>
               <text v-else class="bubble-text" :class="{ withdrawn: item.message.is_withdrawn }">
                 {{ getMessageBody(item.message) }}
               </text>
             </view>
             <view class="message-meta">
-              <text v-if="isMine(item.message.sender.id)">{{ item.message.is_read ? '已读' : '未读' }}</text>
+              <text v-if="isMine(item.message.sender.id)" :class="{ failed: item.message.local_status === 'failed' }">
+                {{ getMessageStatusText(item.message) }}
+              </text>
             </view>
           </view>
         </view>
@@ -105,6 +115,10 @@ import { switchTab } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 import { connectAuthedSocket } from '../../utils/websocket'
 
+type LocalChatMessage = ChatMessage & {
+  local_status?: 'sending' | 'failed'
+}
+
 type ChatSocketPayload =
   | { type: 'chat.ready'; thread_id: string }
   | { type: 'chat.error'; message: string }
@@ -118,7 +132,7 @@ const targetUserId = ref('')
 const sourceType = ref('')
 const sourceId = ref('')
 const thread = ref<ChatThread | null>(null)
-const messages = ref<ChatMessage[]>([])
+const messages = ref<LocalChatMessage[]>([])
 const messageBody = ref('')
 const errorMessage = ref('')
 const sending = ref(false)
@@ -130,6 +144,8 @@ const peerTyping = ref(false)
 const hidingThread = ref(false)
 const scrollTop = ref(0)
 const scrollBottomSeed = ref(100000)
+const localImageUrls = ref<Record<string, string>>({})
+const imageLoadFailed = ref<Record<string, boolean>>({})
 
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let peerTypingTimer: ReturnType<typeof setTimeout> | null = null
@@ -150,7 +166,7 @@ const canSendText = computed(() => Boolean(messageBody.value.trim()) && !sending
 const messageItems = computed(() => {
   const items: Array<
     | { type: 'time'; key: string; label: string }
-    | { type: 'message'; key: string; message: ChatMessage }
+    | { type: 'message'; key: string; message: LocalChatMessage }
   > = []
   let lastTimestamp = 0
   messages.value.forEach((message) => {
@@ -172,6 +188,13 @@ watch(
   () => messages.value.length,
   () => {
     void scrollToBottom()
+  },
+)
+
+watch(
+  () => messages.value.map((message) => `${message.id}:${message.image_url}`).join('|'),
+  () => {
+    void cacheMessageImages()
   },
 )
 
@@ -386,7 +409,7 @@ function handleTypingStop() {
   sendTypingEvent('typing.stop')
 }
 
-function upsertMessage(incoming: ChatMessage) {
+function upsertMessage(incoming: LocalChatMessage) {
   const exists = messages.value.some((item) => item.id === incoming.id)
   if (exists) {
     messages.value = messages.value.map((item) => (item.id === incoming.id ? incoming : item))
@@ -394,6 +417,40 @@ function upsertMessage(incoming: ChatMessage) {
   }
   messages.value = [...messages.value, incoming].sort((first, second) => first.created_at.localeCompare(second.created_at))
   void scrollToBottom()
+  void cacheMessageImages()
+}
+
+function createLocalTextMessage(body: string): LocalChatMessage {
+  const now = new Date().toISOString()
+  return {
+    id: `local-${Date.now()}`,
+    sender: currentUser.value as UserSummary,
+    body,
+    image_url: '',
+    is_read: false,
+    read_at: null,
+    is_withdrawn: false,
+    withdrawn_at: null,
+    created_at: now,
+    updated_at: now,
+    local_status: 'sending',
+  }
+}
+
+function replaceLocalMessage(localId: string, realMessage: ChatMessage) {
+  messages.value = messages.value.map((message) => (message.id === localId ? realMessage : message))
+  void scrollToBottom()
+}
+
+function markLocalMessageFailed(localId: string) {
+  messages.value = messages.value.map((message) =>
+    message.id === localId
+      ? {
+          ...message,
+          local_status: 'failed',
+        }
+      : message,
+  )
 }
 
 async function handleSend() {
@@ -408,13 +465,18 @@ async function handleSend() {
     return
   }
 
+  const localMessage = createLocalTextMessage(body)
+  messages.value = [...messages.value, localMessage]
+  messageBody.value = ''
+  handleTypingStop()
+  void scrollToBottom()
+
   sending.value = true
   try {
     const message = await sendChatMessage(threadId.value, { body })
-    upsertMessage(message)
-    messageBody.value = ''
-    handleTypingStop()
+    replaceLocalMessage(localMessage.id, message)
   } catch (error) {
+    markLocalMessageFailed(localMessage.id)
     errorMessage.value = error instanceof Error ? error.message : '发送消息失败'
   } finally {
     sending.value = false
@@ -468,6 +530,16 @@ function isMine(senderId: string) {
   return senderId === (currentUser.value?.id ?? '')
 }
 
+function getMessageStatusText(message: LocalChatMessage) {
+  if (message.local_status === 'sending') {
+    return '发送中'
+  }
+  if (message.local_status === 'failed') {
+    return '发送失败'
+  }
+  return message.is_read ? '已读' : '未读'
+}
+
 function getSenderName(sender: UserSummary) {
   return sender.nickname || sender.full_name || sender.claw_id || '校园用户'
 }
@@ -478,6 +550,32 @@ function getSenderInitial(sender: UserSummary) {
 
 function isImageMessage(message: ChatMessage) {
   return Boolean(message.image_url)
+}
+
+async function cacheMessageImages() {
+  const imageMessages = messages.value.filter((message) => isImageMessage(message) && !localImageUrls.value[message.id])
+  for (const message of imageMessages) {
+    const remoteUrl = getImageUrl(message.image_url)
+    if (!remoteUrl || !/^https?:\/\//i.test(remoteUrl)) {
+      continue
+    }
+    try {
+      const result = await uni.downloadFile({ url: remoteUrl })
+      if (result.statusCode && result.statusCode >= 200 && result.statusCode < 300 && result.tempFilePath) {
+        localImageUrls.value = {
+          ...localImageUrls.value,
+          [message.id]: result.tempFilePath,
+        }
+        imageLoadFailed.value = {
+          ...imageLoadFailed.value,
+          [message.id]: false,
+        }
+      }
+    } catch (error) {
+      console.warn('chat image download failed', remoteUrl, error)
+      continue
+    }
+  }
 }
 
 function getMessageBody(message: ChatMessage) {
@@ -494,8 +592,25 @@ function getImageUrl(url: string) {
   return `${BASE_URL.replace(/\/api\/v1\/?$/, '')}${url}`
 }
 
-function previewMessageImage(url: string) {
-  const imageUrl = getImageUrl(url)
+function getDisplayImageUrl(message: ChatMessage) {
+  return localImageUrls.value[message.id] || getImageUrl(message.image_url)
+}
+
+function handleMessageImageError(message: ChatMessage) {
+  const remoteUrl = getImageUrl(message.image_url)
+  console.warn('chat image render failed', {
+    messageId: message.id,
+    remoteUrl,
+    localUrl: localImageUrls.value[message.id] || '',
+  })
+  imageLoadFailed.value = {
+    ...imageLoadFailed.value,
+    [message.id]: true,
+  }
+}
+
+function previewMessageImage(message: ChatMessage) {
+  const imageUrl = localImageUrls.value[message.id] || getImageUrl(message.image_url)
   if (!imageUrl) {
     return
   }
@@ -671,9 +786,23 @@ function formatDate(value: string) {
 
 .message-image {
   width: 320rpx;
-  max-height: 420rpx;
+  height: 320rpx;
   border-radius: 18rpx;
   background: rgba(16, 33, 51, 0.08);
+  display: block;
+}
+
+.image-fallback {
+  width: 320rpx;
+  height: 220rpx;
+  border-radius: 18rpx;
+  background: rgba(16, 33, 51, 0.08);
+  border: 1rpx dashed rgba(16, 33, 51, 0.18);
+  color: #6b7280;
+  font-size: 26rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .message-meta {
@@ -682,6 +811,10 @@ function formatDate(value: string) {
   color: #9aa1aa;
   font-size: 20rpx;
   min-height: 24rpx;
+}
+
+.message-meta .failed {
+  color: #ef4444;
 }
 
 .empty-chat {
