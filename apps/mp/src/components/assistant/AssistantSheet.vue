@@ -94,6 +94,7 @@
                 @execute="handleExecuteAction"
                 @fill="handleFillAction"
                 @generate="handleGenerateOnly"
+                @recommend="handleRecommendationAction"
               />
             </view>
 
@@ -139,6 +140,8 @@ import { computed, nextTick, ref, watch } from 'vue'
 import AssistantActionCard from './AssistantActionCard.vue'
 import type { AssistantActionProposal, AssistantMessage, AssistantSession } from '../../types/api'
 import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
+import { sendDatingSignal } from '../../services/dating'
+import { favoriteTradePost } from '../../services/trade'
 import { isAuthenticated, redirectToLogin } from '../../utils/auth'
 import { saveAssistantDraft } from '../../utils/assistantDraft'
 
@@ -181,7 +184,7 @@ const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
 const sheetHeight = ref(64)
 const dragStartY = ref(0)
 const dragStartHeight = ref(64)
-const ASSISTANT_UI_DEBUG = true
+const ASSISTANT_UI_DEBUG = false
 
 const sessionKey = computed(
   () => `${props.pageType}::${props.contextPath || ''}::${props.contextTargetType || ''}::${props.contextTargetId || ''}`,
@@ -381,7 +384,7 @@ async function ensureSessionReady() {
 
     await createFreshSession()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'AI assistant unavailable'
+    errorMessage.value = error instanceof Error ? error.message : 'AI 助手暂时不可用，请稍后再试'
   } finally {
     bootstrapping.value = false
   }
@@ -480,7 +483,7 @@ async function handleSend() {
   const body = draft.value.trim()
 
   if (!body) {
-    errorMessage.value = 'Please enter a message'
+    errorMessage.value = '请输入你想让 AI 帮忙的内容'
     return
   }
 
@@ -523,11 +526,11 @@ async function handleSend() {
       keepLoadingForRecovery = !hasTurnResponse
       if (messages.value.length <= previousMessageCount && !keepLoadingForRecovery) {
         draft.value = body
-        errorMessage.value = error instanceof Error ? error.message : 'Send failed'
+        errorMessage.value = error instanceof Error ? error.message : '发送失败，请稍后再试'
       }
     } catch {
       keepLoadingForRecovery = true
-      errorMessage.value = error instanceof Error ? error.message : 'Send failed'
+      errorMessage.value = error instanceof Error ? error.message : '发送失败，请稍后再试'
     } finally {
       if (keepLoadingForRecovery) {
         errorMessage.value = ''
@@ -567,7 +570,7 @@ async function handleRestartSession() {
   try {
     await createFreshSession()
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : 'AI assistant unavailable'
+    errorMessage.value = error instanceof Error ? error.message : 'AI 助手暂时不可用，请稍后再试'
   } finally {
     bootstrapping.value = false
   }
@@ -586,7 +589,7 @@ function openTargetPage(targetPage: string) {
 
 function handleFillAction(action: AssistantActionProposal) {
   saveAssistantDraft(action)
-  uni.showToast({ title: 'Draft filled', icon: 'success' })
+  uni.showToast({ title: '已填入草稿', icon: 'success' })
   openTargetPage(action.target_page)
 }
 
@@ -595,11 +598,57 @@ function handleGenerateOnly(action: AssistantActionProposal) {
   persistCurrentSession()
 }
 
+function makeDraftAction(action: AssistantActionProposal, item: Record<string, unknown>) {
+  const draft = item.draft
+  if (!draft || typeof draft !== 'object') {
+    return action
+  }
+  const draftValue = draft as Record<string, unknown>
+  return {
+    ...action,
+    kind: String(draftValue.kind || action.kind) as AssistantActionProposal['kind'],
+    target_page: String(draftValue.target_page || action.target_page),
+    fill_payload: (draftValue.fill_payload && typeof draftValue.fill_payload === 'object' ? draftValue.fill_payload : {}) as Record<string, unknown>,
+  }
+}
+
+async function handleRecommendationAction(
+  action: AssistantActionProposal,
+  item: Record<string, unknown>,
+  mode: 'open' | 'contact' | 'fill' | 'interested' | 'skip' | 'favorite',
+) {
+  if (mode === 'contact') {
+    openTargetPage(String(item.contact_page || item.target_page || action.target_page))
+    return
+  }
+  if (mode === 'fill') {
+    saveAssistantDraft(makeDraftAction(action, item))
+    uni.showToast({ title: '已填入建议', icon: 'success' })
+    openTargetPage(String((item.draft as Record<string, unknown> | undefined)?.target_page || item.contact_page || item.target_page || action.target_page))
+    return
+  }
+  if (mode === 'interested' || mode === 'skip') {
+    const targetUserId = String(item.target_user_id || '')
+    if (!targetUserId) return
+    await sendDatingSignal({ target_user_id: targetUserId, signal: mode === 'interested' ? 'interested' : 'not_interested' })
+    uni.showToast({ title: mode === 'interested' ? '已表达感兴趣' : '已跳过', icon: 'success' })
+    return
+  }
+  if (mode === 'favorite') {
+    const postId = String(item.post_id || '')
+    if (!postId) return
+    await favoriteTradePost(postId)
+    uni.showToast({ title: '已收藏', icon: 'success' })
+    return
+  }
+  openTargetPage(String(item.target_page || action.target_page))
+}
+
 function handleExecuteAction(action: AssistantActionProposal) {
   uni.showModal({
-    title: 'Confirm AI action',
-    content: 'Will execute: ' + action.title + '. Please confirm the content before continuing.',
-    confirmText: 'Confirm',
+    title: '确认执行 AI 动作',
+    content: '将执行：' + action.title + '。请确认内容无误后继续。',
+    confirmText: '确认执行',
     success: async (result) => {
       if (!result.confirm) {
         return
@@ -609,12 +658,12 @@ function handleExecuteAction(action: AssistantActionProposal) {
         const response = await executeAssistantAction(action.id)
         actions.value = actions.value.map((item) => (item.id === action.id ? response.action : item))
         persistCurrentSession()
-        uni.showToast({ title: response.result.message || 'Executed', icon: 'success' })
+        uni.showToast({ title: response.result.message || '执行成功', icon: 'success' })
         if (response.result.target_page) {
           openTargetPage(String(response.result.target_page))
         }
       } catch (error) {
-        uni.showToast({ title: error instanceof Error ? error.message : 'Execute failed', icon: 'none' })
+        uni.showToast({ title: error instanceof Error ? error.message : '执行失败', icon: 'none' })
       } finally {
         actionBusyId.value = ''
       }

@@ -4,18 +4,20 @@ from copy import deepcopy
 from datetime import timedelta
 import json
 import logging
+import os
 import re
 from typing import Any
 
 from django.utils import timezone
 
 from .agent import AgentCallError, call_agent, call_agent_json
+from .recommendations import build_icebreaker_action, build_recommendation_action
 from .services import build_assistant_reply_with_history
 from .skills import SKILLS, _guess_kind
 
 
 logger = logging.getLogger(__name__)
-ASSISTANT_DEBUG = True
+ASSISTANT_DEBUG = os.getenv("ASSISTANT_DEBUG", "").lower() in {"1", "true", "yes"}
 
 
 def _assistant_debug(message: str, *args: Any) -> None:
@@ -1947,6 +1949,14 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
 
 
 def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    recommendation_result = build_recommendation_action(user, session, prompt)
+    if recommendation_result:
+        return recommendation_result
+
+    icebreaker_result = build_icebreaker_action(user, session, prompt)
+    if icebreaker_result:
+        return icebreaker_result
+
     try:
         return plan_turn_with_agent(user, session, prompt, history)
     except AgentCallError:

@@ -2,7 +2,7 @@
   <view class="action-card">
     <view class="action-head">
       <view class="action-copy">
-        <text class="action-kicker">AI 动作建议</text>
+        <text class="action-kicker">{{ recommendations.length ? 'AI 推荐结果' : 'AI 动作建议' }}</text>
         <view style="height: 8rpx" />
         <text class="action-title">{{ action.title }}</text>
       </view>
@@ -13,7 +13,43 @@
     <text class="action-desc">{{ previewText }}</text>
     <view style="height: 16rpx" />
 
-    <view class="action-buttons">
+    <view v-if="recommendations.length" class="recommendation-list">
+      <view v-for="item in recommendations" :key="getRecommendationKey(item)" class="recommendation-card">
+        <view class="recommendation-head">
+          <view class="recommendation-copy">
+            <text class="recommendation-title">{{ getRecommendationText(item, 'title') }}</text>
+            <text class="recommendation-subtitle">{{ getRecommendationText(item, 'subtitle') }}</text>
+          </view>
+          <view class="recommendation-score">
+            <text>{{ getRecommendationScore(item) }}</text>
+            <text class="recommendation-score-label">{{ getRecommendationText(item, 'score_label') }}</text>
+          </view>
+        </view>
+        <text class="recommendation-reason">{{ getRecommendationText(item, 'reason') }}</text>
+        <view class="recommendation-actions">
+          <button class="action-button primary compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'open')">
+            查看
+          </button>
+          <button v-if="getRecommendationText(item, 'contact_page')" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'contact')">
+            {{ contactButtonText(item) }}
+          </button>
+          <button v-if="hasDraft(item)" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'fill')">
+            {{ fillButtonText(item) }}
+          </button>
+          <button v-if="getRecommendationText(item, 'type') === 'dating'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'interested')">
+            感兴趣
+          </button>
+          <button v-if="getRecommendationText(item, 'type') === 'dating'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'skip')">
+            跳过
+          </button>
+          <button v-if="getRecommendationText(item, 'type') === 'trade'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'favorite')">
+            收藏
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <view v-else class="action-buttons">
       <button class="action-button primary" :disabled="disabled" @tap="$emit('execute', action)">
         填充并发布
       </button>
@@ -41,6 +77,7 @@ defineEmits<{
   execute: [AssistantActionProposal]
   fill: [AssistantActionProposal]
   generate: [AssistantActionProposal]
+  recommend: [AssistantActionProposal, Record<string, unknown>, 'open' | 'contact' | 'fill' | 'interested' | 'skip' | 'favorite']
 }>()
 
 const disabled = computed(() => props.action.status !== 'pending' || Boolean(props.busy))
@@ -50,6 +87,42 @@ const previewText = computed(() => {
   const preview = props.action.preview || {}
   return String(preview.body || preview.title || preview.action || 'AI 已准备好可执行内容，请确认后继续。')
 })
+
+const recommendations = computed<Record<string, unknown>[]>(() => {
+  const value = props.action.preview?.recommendations
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : []
+})
+
+function getRecommendationText(item: Record<string, unknown>, key: string) {
+  return String(item[key] ?? '')
+}
+
+function getRecommendationScore(item: Record<string, unknown>) {
+  const score = Number(item.score ?? 0)
+  return Number.isFinite(score) ? `${Math.round(score)}` : '0'
+}
+
+function getRecommendationKey(item: Record<string, unknown>) {
+  return String(item.post_id || item.target_user_id || item.title || Math.random())
+}
+
+function hasDraft(item: Record<string, unknown>) {
+  return Boolean(item.draft && typeof item.draft === 'object')
+}
+
+function contactButtonText(item: Record<string, unknown>) {
+  const type = getRecommendationText(item, 'type')
+  if (type === 'team') return '联系发起人'
+  if (type === 'trade') return '联系卖家'
+  return '联系TA'
+}
+
+function fillButtonText(item: Record<string, unknown>) {
+  const type = getRecommendationText(item, 'type')
+  if (type === 'team') return '填充申请'
+  if (type === 'trade') return '填充询问'
+  return '填充开场白'
+}
 </script>
 
 <style scoped lang="scss">
@@ -101,7 +174,8 @@ const previewText = computed(() => {
   white-space: pre-wrap;
 }
 
-.action-buttons {
+.action-buttons,
+.recommendation-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12rpx;
@@ -132,7 +206,84 @@ const previewText = computed(() => {
   color: #102133;
 }
 
+.action-button.compact {
+  min-height: 54rpx;
+  padding: 0 18rpx;
+  font-size: 22rpx;
+}
+
 .action-button::after {
   border: 0;
+}
+
+.recommendation-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.recommendation-card {
+  padding: 18rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 250, 245, 0.92);
+  border: 1rpx solid rgba(16, 33, 51, 0.08);
+}
+
+.recommendation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.recommendation-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.recommendation-title {
+  font-size: 27rpx;
+  font-weight: 800;
+  color: #102133;
+}
+
+.recommendation-subtitle,
+.recommendation-reason {
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: #68727f;
+}
+
+.recommendation-score {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 24rpx;
+  background: rgba(241, 107, 79, 0.12);
+  color: #f16b4f;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 27rpx;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.recommendation-score-label {
+  margin-top: 2rpx;
+  font-size: 17rpx;
+  font-weight: 700;
+}
+
+.recommendation-reason {
+  display: block;
+  margin-top: 12rpx;
+}
+
+.recommendation-actions {
+  margin-top: 14rpx;
 }
 </style>

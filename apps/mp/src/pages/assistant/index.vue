@@ -70,6 +70,7 @@
           @execute="handleExecuteAction"
           @fill="handleFillAction"
           @generate="handleGenerateOnly"
+          @recommend="handleRecommendationAction"
         />
       </view>
 
@@ -107,6 +108,8 @@ import { onLoad } from '@dcloudio/uni-app'
 import AssistantActionCard from '../../components/assistant/AssistantActionCard.vue'
 import type { AssistantActionProposal, AssistantMessage } from '../../types/api'
 import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
+import { sendDatingSignal } from '../../services/dating'
+import { favoriteTradePost } from '../../services/trade'
 import { ensureAuthenticated } from '../../utils/auth'
 import { saveAssistantDraft } from '../../utils/assistantDraft'
 import { showToast } from '../../utils/ui'
@@ -122,7 +125,7 @@ const scrollBottomSeed = ref(100000)
 const refreshVersion = ref(0)
 const lastLocalMutationAt = ref(0)
 const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
-const ASSISTANT_UI_DEBUG = true
+const ASSISTANT_UI_DEBUG = false
 
 const quickReplies = [
   '帮我推荐一个比赛',
@@ -391,6 +394,52 @@ function handleFillAction(action: AssistantActionProposal) {
 
 function handleGenerateOnly(action: AssistantActionProposal) {
   actions.value = actions.value.filter((item) => item.id !== action.id)
+}
+
+function makeDraftAction(action: AssistantActionProposal, item: Record<string, unknown>) {
+  const draft = item.draft
+  if (!draft || typeof draft !== 'object') {
+    return action
+  }
+  const draftValue = draft as Record<string, unknown>
+  return {
+    ...action,
+    kind: String(draftValue.kind || action.kind) as AssistantActionProposal['kind'],
+    target_page: String(draftValue.target_page || action.target_page),
+    fill_payload: (draftValue.fill_payload && typeof draftValue.fill_payload === 'object' ? draftValue.fill_payload : {}) as Record<string, unknown>,
+  }
+}
+
+async function handleRecommendationAction(
+  action: AssistantActionProposal,
+  item: Record<string, unknown>,
+  mode: 'open' | 'contact' | 'fill' | 'interested' | 'skip' | 'favorite',
+) {
+  if (mode === 'contact') {
+    openTargetPage(String(item.contact_page || item.target_page || action.target_page))
+    return
+  }
+  if (mode === 'fill') {
+    saveAssistantDraft(makeDraftAction(action, item))
+    showToast('已填入建议', 'success')
+    openTargetPage(String((item.draft as Record<string, unknown> | undefined)?.target_page || item.contact_page || item.target_page || action.target_page))
+    return
+  }
+  if (mode === 'interested' || mode === 'skip') {
+    const targetUserId = String(item.target_user_id || '')
+    if (!targetUserId) return
+    const result = await sendDatingSignal({ target_user_id: targetUserId, signal: mode === 'interested' ? 'interested' : 'not_interested' })
+    showToast(result.matched ? '匹配成功' : mode === 'interested' ? '已表达感兴趣' : '已跳过', 'success')
+    return
+  }
+  if (mode === 'favorite') {
+    const postId = String(item.post_id || '')
+    if (!postId) return
+    await favoriteTradePost(postId)
+    showToast('已收藏', 'success')
+    return
+  }
+  openTargetPage(String(item.target_page || action.target_page))
 }
 
 function handleExecuteAction(action: AssistantActionProposal) {
