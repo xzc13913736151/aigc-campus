@@ -24,18 +24,5 @@
     "navigationBarTitleText": "CampusClaw",
     "navigationBarBackgroundColor": "#f7f1e8",
     "backgroundColor": "#f7f1e8"
-  },
-  "tabBar": {
-    "custom": true,
-    "color": "#7a7f87",
-    "selectedColor": "#f16b4f",
-    "backgroundColor": "#fffaf5",
-    "borderStyle": "black",
-    "list": [
-      { "pagePath": "pages/forum/index", "text": "论坛" },
-      { "pagePath": "pages/publish/index", "text": "匹配" },
-      { "pagePath": "pages/messages/index", "text": "消息" },
-      { "pagePath": "pages/me/index", "text": "我的" }
-    ]
   }
 }

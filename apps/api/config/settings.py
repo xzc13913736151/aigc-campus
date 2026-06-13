@@ -45,7 +45,7 @@ def env_list(*keys: str, default: str = "") -> list[str]:
 load_env_file(REPO_DIR / ".env")
 load_env_file(BASE_DIR / ".env")
 
-DEBUG = env_bool("DEBUG", "DJANGO_DEBUG", default=False)
+DEBUG = env_bool("DJANGO_DEBUG", "DEBUG", default=False)
 
 SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("DJANGO_SECRET_KEY")
 if not SECRET_KEY:
@@ -55,8 +55,8 @@ if not SECRET_KEY:
         raise ImproperlyConfigured("Set SECRET_KEY when DEBUG is False.")
 
 ALLOWED_HOSTS = env_list(
-    "ALLOWED_HOSTS",
     "DJANGO_ALLOWED_HOSTS",
+    "ALLOWED_HOSTS",
     default="localhost,127.0.0.1" if DEBUG else "",
 )
 render_external_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME")

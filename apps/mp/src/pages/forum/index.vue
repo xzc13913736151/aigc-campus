@@ -6,7 +6,7 @@
       <text class="title">校园最新动态、求助、分享和灵感，都从这里开始。</text>
 
       <view v-if="!hasToken" class="login-cta">
-        <button class="btn btn-primary" @tap="goLogin">微信一键登录</button>
+        <button class="btn btn-primary" @tap="goLogin">邮箱密码登录</button>
       </view>
     </view>
 
@@ -443,8 +443,8 @@ function contactAuthor(post: ForumPost) {
 }
 
 .category-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16rpx;
 }
 
@@ -453,7 +453,7 @@ function contactAuthor(post: ForumPost) {
   align-items: center;
   justify-content: center;
   min-height: 66rpx;
-  padding: 0 24rpx;
+  padding: 0 10rpx;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.86);
   border: 1rpx solid rgba(16, 33, 51, 0.1);
@@ -461,7 +461,7 @@ function contactAuthor(post: ForumPost) {
   font-size: 24rpx;
   font-weight: 600;
   line-height: 1;
-  flex-shrink: 0;
+  width: 100%;
 }
 
 .category-chip::after {

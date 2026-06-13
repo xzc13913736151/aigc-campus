@@ -3,10 +3,10 @@
     <view class="section hero">
       <text class="eyebrow">CampusClaw 登录</text>
       <view style="height: 18rpx" />
-      <text class="title">使用微信一键登录，几秒内进入 CampusClaw。</text>
+      <text class="title">快速进入 CampusClaw，开始校园探索。</text>
       <view style="height: 18rpx" />
       <text class="subtitle">
-        首次登录成功后，系统会先引导你补全头像、昵称和基础资料。完成后会自动回到你原本想去的页面。
+        支持邮箱密码登录。App 演示版可直接使用演示账号进入核心功能。
       </text>
     </view>
 
@@ -26,13 +26,21 @@
 
       <view class="form login-form">
         <text v-if="errorMessage" class="error">{{ errorMessage }}</text>
+        <!-- #ifdef MP-WEIXIN -->
         <button class="btn btn-primary" :disabled="submitting" @tap="handleLogin">
           {{ submitting ? '登录中...' : '使用微信一键登录' }}
         </button>
         <text class="helper">如果登录失败，请确认小程序 AppID 与后端微信配置一致后再重试。</text>
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
+        <button v-if="enablePasswordLogin" class="btn btn-primary" :disabled="submitting" @tap="handleDemoLogin">
+          {{ submitting ? '登录中...' : '一键进入演示账号' }}
+        </button>
+        <text v-if="enablePasswordLogin" class="helper">App 演示版使用内置演示账号，不依赖微信登录。</text>
+        <!-- #endif -->
         <view v-if="enablePasswordLogin" class="divider">
           <view class="divider-line" />
-          <text>管理员登录</text>
+          <text>邮箱密码登录</text>
           <view class="divider-line" />
         </view>
         <input
@@ -40,7 +48,7 @@
           v-model="email"
           class="input"
           type="text"
-          placeholder="管理员邮箱"
+          placeholder="邮箱"
           :disabled="submitting"
         />
         <input
@@ -75,11 +83,13 @@ const email = ref('')
 const password = ref('')
 const enablePasswordLogin = ENABLE_PASSWORD_LOGIN
 const canPasswordLogin = computed(() => Boolean(email.value.trim() && password.value))
+const DEMO_EMAIL = 'demo_frontend@campusclaw.local'
+const DEMO_PASSWORD = 'demo123456'
 
 const infoItems = [
   {
     title: '快速进入',
-    description: '不需要单独注册账号，直接使用微信完成登录。',
+    description: 'App 演示版可使用演示账号快速进入，也支持邮箱密码登录。',
   },
   {
     title: '首次引导',
@@ -90,6 +100,16 @@ const infoItems = [
     description: '登录成功后会自动回到你原本想去的页面，不需要重复操作。',
   },
 ]
+
+async function loginWithPassword(normalizedEmail: string, rawPassword: string) {
+  const response = await passwordLogin({
+    email: normalizedEmail,
+    password: rawPassword,
+  })
+  applyLoginResult(response)
+  showToast('登录成功', 'success')
+  await completeLogin(response.user ?? null)
+}
 
 async function handleLogin() {
   errorMessage.value = ''
@@ -117,15 +137,23 @@ async function handlePasswordLogin() {
 
   submitting.value = true
   try {
-    const response = await passwordLogin({
-      email: normalizedEmail,
-      password: password.value,
-    })
-    applyLoginResult(response)
-    showToast('登录成功', 'success')
-    await completeLogin(response.user ?? null)
+    await loginWithPassword(normalizedEmail, password.value)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '邮箱密码登录失败'
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function handleDemoLogin() {
+  errorMessage.value = ''
+  submitting.value = true
+  try {
+    email.value = DEMO_EMAIL
+    password.value = DEMO_PASSWORD
+    await loginWithPassword(DEMO_EMAIL, DEMO_PASSWORD)
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '演示账号登录失败，请确认后端已运行并已导入演示数据'
   } finally {
     submitting.value = false
   }

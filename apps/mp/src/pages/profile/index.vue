@@ -13,7 +13,7 @@
     <view v-if="!hasToken" class="card empty">
       <text class="section-title">请先登录</text>
       <view style="height: 12rpx" />
-      <text class="section-desc">需要先完成微信登录，才能读取和保存你的个人资料。</text>
+      <text class="section-desc">需要先完成账号登录，才能读取和保存你的个人资料。</text>
       <view style="height: 24rpx" />
       <button class="btn btn-primary" @tap="goLogin">去登录</button>
     </view>
@@ -56,7 +56,9 @@
 
         <view style="height: 20rpx" />
         <view class="action-row">
+          <!-- #ifdef MP-WEIXIN -->
           <button class="btn btn-secondary" open-type="chooseAvatar" @chooseavatar="handleChooseAvatar">使用微信头像</button>
+          <!-- #endif -->
           <button class="btn btn-ghost" :disabled="uploadingAvatar" @tap="chooseAvatarFromAlbum">
             {{ uploadingAvatar ? '上传中...' : '从相册选择' }}
           </button>

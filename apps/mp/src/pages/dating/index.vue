@@ -7,7 +7,7 @@
     </view>
 
     <view v-if="!hasToken" class="card empty">
-      <text class="section-desc">请先完成微信登录，再进入恋爱匹配功能。</text>
+      <text class="section-desc">请先完成账号登录，再进入恋爱匹配功能。</text>
       <view style="height: 24rpx" />
       <button class="btn btn-primary" @tap="goLogin">去登录</button>
     </view>

@@ -148,7 +148,7 @@
       <view class="card">
         <text class="section-title">账号操作</text>
         <view style="height: 10rpx" />
-        <text class="section-desc">退出后会清理当前小程序登录态，需要重新微信登录才能继续使用。</text>
+        <text class="section-desc">退出后会清理当前登录态，需要重新登录才能继续使用。</text>
         <view style="height: 20rpx" />
         <button class="btn btn-primary" @tap="logout">退出登录</button>
       </view>
@@ -215,7 +215,7 @@ const displayName = computed(() => {
   if (isAdmin.value) {
     return '管理员'
   }
-  return currentUser.value?.email || '微信用户'
+  return currentUser.value?.email || '校园用户'
 })
 
 const displayInitial = computed(() => displayName.value.trim().slice(0, 1) || '我')

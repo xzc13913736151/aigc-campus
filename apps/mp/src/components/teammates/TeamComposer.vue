@@ -6,7 +6,7 @@
     <view style="height: 24rpx" />
 
     <view v-if="!hasToken" class="empty">
-      <text class="section-desc">发布组队前需要先完成微信登录。</text>
+      <text class="section-desc">发布组队前需要先完成账号登录。</text>
       <view style="height: 24rpx" />
       <button class="btn btn-primary" @tap="$emit('login')">去登录</button>
     </view>

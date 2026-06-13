@@ -111,6 +111,7 @@ import {
 } from '../../services/chat'
 import { currentUser, ensureAuthenticated } from '../../utils/auth'
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
+import { chooseImagePaths } from '../../utils/image'
 import { switchTab } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 import { connectAuthedSocket } from '../../utils/websocket'
@@ -491,13 +492,11 @@ async function chooseAndSendImage() {
   sendingImage.value = true
   errorMessage.value = ''
   try {
-    const media = (await uni.chooseMedia({
+    const files = await chooseImagePaths({
       count: 1,
-      mediaType: ['image'],
-      sizeType: ['compressed'],
       sourceType: ['album'],
-    })) as unknown as UniApp.ChooseMediaSuccessCallbackResult
-    const filePath = media.tempFiles?.[0]?.tempFilePath
+    })
+    const filePath = files[0]
     if (!filePath) {
       return
     }

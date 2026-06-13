@@ -1,14 +1,29 @@
 {
-  "name": "CampusClaw",
-  "appid": "wx5fb153b42e8201d3",
-  "description": "CampusClaw 校园社交与组队小程序",
-  "versionName": "0.1.0",
-  "versionCode": "100",
-  "transformPx": false,
-  "mp-weixin": {
-    "appid": "wx5fb153b42e8201d3",
-    "setting": {
-      "urlCheck": false
+    "name" : "CampusClaw",
+    "appid" : "__UNI__C4EB4B1",
+    "description" : "CampusClaw 校园社交与组队小程序",
+    "versionName" : "0.1.0",
+    "versionCode" : "100",
+    "transformPx" : false,
+    "app-plus" : {
+        "distribute" : {
+            "android" : {
+                "package" : "com.campusclaw.app",
+                "permissions" : [
+                    "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+                    "<uses-permission android:name=\"android.permission.READ_EXTERNAL_STORAGE\"/>",
+                    "<uses-permission android:name=\"android.permission.WRITE_EXTERNAL_STORAGE\"/>"
+                ]
+            },
+            "ios" : {
+                "dSYMs" : false
+            }
+        }
+    },
+    "mp-weixin" : {
+        "appid" : "wx5fb153b42e8201d3",
+        "setting" : {
+            "urlCheck" : false
+        }
     }
-  }
 }

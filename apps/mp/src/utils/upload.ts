@@ -1,4 +1,5 @@
 import { BASE_URL } from '../constants'
+import { chooseImagePaths } from './image'
 import { getAccessToken } from './storage'
 
 export async function uploadFile<T>(path: string, filePath: string, formName = 'file') {
@@ -21,17 +22,15 @@ export async function uploadFile<T>(path: string, filePath: string, formName = '
 }
 
 export async function chooseMediaAndUpload<T>(path: string, formName = 'file') {
-  const media = (await uni.chooseMedia({
+  const files = await chooseImagePaths({
     count: 1,
-    mediaType: ['image'],
-    sizeType: ['compressed'],
     sourceType: ['album', 'camera'],
-  })) as unknown as UniApp.ChooseMediaSuccessCallbackResult
+  })
 
-  const file = media.tempFiles?.[0]
-  if (!file?.tempFilePath) {
+  const filePath = files[0]
+  if (!filePath) {
     throw new Error('No file selected.')
   }
 
-  return uploadFile<T>(path, file.tempFilePath, formName)
+  return uploadFile<T>(path, filePath, formName)
 }

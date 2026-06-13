@@ -16,7 +16,7 @@
       </view>
 
       <view v-if="!hasToken" class="empty">
-        <text class="section-desc">发帖前需要先完成微信登录，系统才能记录作者身份并支持后续互动。</text>
+        <text class="section-desc">发帖前需要先完成账号登录，系统才能记录作者身份并支持后续互动。</text>
         <view style="height: 24rpx" />
         <button class="btn btn-primary" @tap="goLogin">去登录</button>
       </view>
@@ -120,6 +120,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import CachedImage from '../../components/CachedImage.vue'
 import { createForumPost, fetchForumPostDetail, updateForumPost, uploadForumPostImage } from '../../services/forum'
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
+import { chooseImagePaths } from '../../utils/image'
 import { getMediaUrl, getMediaUrls } from '../../utils/media'
 import { navigateTo } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
@@ -223,14 +224,10 @@ async function chooseImages() {
 
   uploadingImages.value = true
   try {
-    const media = (await uni.chooseMedia({
+    const files = await chooseImagePaths({
       count: 6,
-      mediaType: ['image'],
-      sizeType: ['compressed'],
       sourceType: ['album', 'camera'],
-    })) as unknown as UniApp.ChooseMediaSuccessCallbackResult
-
-    const files = media.tempFiles?.map((file) => file.tempFilePath).filter(Boolean) ?? []
+    })
     if (!files.length) {
       return
     }

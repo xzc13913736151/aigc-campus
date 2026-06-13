@@ -2,6 +2,8 @@
 .idea/
 .vscode/
 .local/
+.hbuilderx/
+apps/mp/.hbuilderx/
 
 # Node
 node_modules/
@@ -10,6 +12,8 @@ apps/mp/dist/
 coverage/
 *.tsbuildinfo
 *.log
+*.apk
+*.aab
 
 # Python
 __pycache__/
@@ -30,6 +34,9 @@ staticfiles/
 .env.*.local
 config.yaml
 project.private.config.json
+*.keystore
+*.jks
+*.p12
 
 # OS
 Thumbs.db

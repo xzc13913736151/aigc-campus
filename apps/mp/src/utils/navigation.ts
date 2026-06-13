@@ -29,5 +29,5 @@ export function navigateTo(url: StackUrl) {
 }
 
 export function switchTab(url: TabTarget) {
-  uni.switchTab({ url })
+  uni.reLaunch({ url })
 }

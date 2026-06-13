@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+import os
 
 
 def healthcheck(_request):
@@ -28,5 +29,7 @@ urlpatterns = [
     path("api/v1/moderation/", include("moderation.urls")),
 ]
 
-if settings.DEBUG:
+serve_media_files = os.getenv("SERVE_MEDIA_FILES", "").strip().lower() in {"1", "true", "yes", "on"}
+
+if settings.DEBUG or serve_media_files:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

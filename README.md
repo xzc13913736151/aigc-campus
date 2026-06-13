@@ -40,11 +40,66 @@ apps/mp/src/constants/index.ts
 ipconfig
 ```
 
-找到当前 Wi-Fi 的 IPv4，例如 `10.130.55.19`，然后确保 `BASE_URL` 类似：
+找到当前 Wi-Fi 的 IPv4，例如 `10.54.173.45`，然后确保 `BASE_URL` 类似：
 
 ```ts
-export const BASE_URL = "http://10.130.55.19:8000/api/v1";
+export const BASE_URL = "http://10.54.173.45:8000/api/v1";
 ```
+
+### 1.1 切换 Wi-Fi 或手机热点后的 IPv4 更新流程
+
+如果电脑换了 Wi-Fi、重新连接手机热点，或者手机热点重启，电脑拿到的 IPv4 可能会变化。只要 IPv4 变了，需要同步改三个地方：
+
+1. PowerShell 运行：
+
+```powershell
+ipconfig
+```
+
+2. 找到这一段：
+
+```text
+无线局域网适配器 WLAN:
+  IPv4 地址 . . . . . . . . . . . . : 10.xx.xx.xx
+```
+
+不要使用 VMware、CorpLink、Wintun、TAP 这些适配器的 IP，只看 `WLAN` 下面的 `IPv4 地址`。
+
+3. 修改前端接口地址：
+
+```text
+apps/mp/src/constants/index.ts
+```
+
+例如：
+
+```ts
+export const BASE_URL = "http://10.54.173.45:8000/api/v1";
+```
+
+4. 把同一个 IP 写进项目根目录 `.env`：
+
+```text
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,10.54.173.45
+```
+
+本地演示建议 `.env` 同时保持这些配置，避免每次手动输入环境变量：
+
+```text
+DJANGO_DEBUG=True
+DB_ENGINE=sqlite
+USE_INMEMORY_CHANNEL_LAYER=True
+SERVE_MEDIA_FILES=True
+```
+
+5. 手机浏览器验证：
+
+```text
+http://10.54.173.45:8000/health/
+```
+
+看到 `{ "status": "ok" }` 后，再重新构建小程序或 App。  
+注意：如果 APK 已经安装到手机上，`BASE_URL` 变了以后必须重新构建并重新安装 APK。
 
 ### 2. 初始化数据库
 
@@ -52,8 +107,6 @@ export const BASE_URL = "http://10.130.55.19:8000/api/v1";
 
 ```powershell
 conda activate aigc
-$env:DEBUG='1'
-$env:SECRET_KEY='campusclaw-local-dev-secret'
 python apps/api/manage.py migrate
 ```
 
@@ -63,8 +116,6 @@ python apps/api/manage.py migrate
 
 ```powershell
 conda activate aigc
-$env:DEBUG='1'
-$env:SECRET_KEY='campusclaw-local-dev-secret'
 python apps/api/manage.py seed_demo_data
 ```
 
@@ -100,13 +151,20 @@ demo_chat_music@campusclaw.local
 
 ### 4. 启动后端
 
+项目会自动读取根目录 `.env`，确认 `.env` 已包含：
+
+```text
+DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,10.54.173.45
+DB_ENGINE=sqlite
+USE_INMEMORY_CHANNEL_LAYER=True
+SERVE_MEDIA_FILES=True
+```
+
 在项目根目录运行：
 
 ```powershell
 conda activate aigc
-$env:DEBUG='1'
-$env:SECRET_KEY='campusclaw-local-dev-secret'
-$env:ALLOWED_HOSTS='localhost,127.0.0.1,10.130.55.19'
 python apps/api/manage.py runserver 0.0.0.0:8000
 ```
 
@@ -114,20 +172,18 @@ python apps/api/manage.py runserver 0.0.0.0:8000
 
 ```powershell
 conda activate aigc
-$env:DEBUG='1'
-$env:SECRET_KEY='campusclaw-local-dev-secret'
-$env:ALLOWED_HOSTS='localhost,127.0.0.1,10.130.55.19'
 python manage.py runserver 0.0.0.0:8000
 ```
 
 注意必须使用 `0.0.0.0:8000`，不要用 `127.0.0.1:8000`。否则手机访问不到电脑上的后端。
+如果手机访问 `/health/` 出现 `DisallowedHost`，说明 `.env` 里的 `DJANGO_ALLOWED_HOSTS` 没有包含当前电脑 IPv4，按 1.1 节重新更新 IP 后重启后端。
 
 ### 5. 验证手机能访问后端
 
 电脑浏览器打开：
 
 ```text
-http://10.130.55.19:8000/health/
+http://10.54.173.45:8000/health/
 ```
 
 手机和电脑连接同一个 Wi-Fi 后，手机浏览器也打开同一个地址。
@@ -167,6 +223,99 @@ apps/mp/dist/dev/mp-weixin
 
 然后点击“编译”，再扫码真机预览。
 
+### 7. 使用 HBuilderX 运行到 Android 手机或模拟器
+
+如果需要把 uni-app 前端作为 Android App 运行或打 APK，使用 HBuilderX。
+
+1. 下载 HBuilderX：
+
+```text
+https://www.dcloud.io/hbuilderx.html
+```
+
+建议下载 Windows 版的 App 开发版。安装后打开 HBuilderX，并登录 DCloud 账号。
+
+2. 安装前端依赖：
+
+```powershell
+cd E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
+npm install --registry=https://registry.npmmirror.com
+```
+
+3. 用 HBuilderX 打开源码项目：
+
+```text
+文件 -> 打开目录
+E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
+```
+
+4. Android 手机开启 USB 调试：
+
+```text
+设置 -> 关于手机 -> 连续点击版本号/系统版本 7 次
+设置 -> 开发者选项 -> 打开 USB 调试
+```
+
+用支持数据传输的数据线连接电脑。手机弹出授权时选择“允许 USB 调试”。
+
+5. 运行到手机或模拟器：
+
+```text
+运行 -> 运行到手机或模拟器 -> 运行到 Android App 基座
+```
+
+如果 HBuilderX 提示缺少编译器模块，先确认已经在 `apps/mp` 目录执行过 `npm install`。如果仍然失败，可以使用下面的 App 构建产物方式。
+
+### 8. 构建 Android App 产物并云打包 APK
+
+当前项目更稳定的 APK 打包流程是先命令行构建 App 产物，再用 HBuilderX 打包该产物目录。
+
+1. 构建 App：
+
+```powershell
+cd E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
+npm.cmd run build:app
+```
+
+2. 用 HBuilderX 打开 App 构建产物：
+
+```text
+文件 -> 打开目录
+E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp\dist\build\app
+```
+
+3. 云打包 APK：
+
+```text
+发行 -> App-Android/iOS-云打包
+```
+
+推荐配置：
+
+```text
+平台：Android
+证书：使用云端证书
+包名：com.campusclaw.app
+版本名称：0.1.0
+版本号：100
+渠道包：无
+打包方式：快速安心打包或传统打包
+```
+
+4. 查看打包状态并下载 APK：
+
+```text
+发行 -> App-Android/iOS-查看云打包状态
+```
+
+5. 安装 APK 前确认后端已启动，并且手机可以打开：
+
+```text
+http://当前电脑IPv4:8000/health/
+```
+
+APK 只包含前端，不包含 Django 后端。比赛现场演示时，电脑需要持续运行后端，手机和电脑需要连接同一个 Wi-Fi 或同一个手机热点。
+
 ## AI 演示口令
 
 进入小程序 AI 助手后，可以测试：
@@ -194,7 +343,7 @@ apps/mp/dist/dev/mp-weixin
 先用手机浏览器打开：
 
 ```text
-http://10.130.55.19:8000/health/
+http://10.54.173.45:8000/health/
 ```
 
 如果打不开，优先检查：
