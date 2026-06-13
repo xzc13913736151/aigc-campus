@@ -22,9 +22,24 @@ aigc-campus-main/
 apps/api                         # 后端根目录
 apps/mp/src                      # 小程序源码
 apps/mp/dist/build/mp-weixin     # 小程序构建产物，微信开发者工具导入这里
+apps/mp/dist/build/app           # App 构建产物，HBuilderX 可用于云打包 APK
 ```
 
-## 比赛演示启动流程
+## 比赛演示启动流程总览
+
+这个项目现在可以走两条前端演示路线：
+
+```text
+路线 A：微信小程序
+  pnpm 构建 mp-weixin -> 微信开发者工具导入 -> 真机预览
+
+路线 B：Android APK
+  HBuilderX 打包 APK -> 手机安装 APK -> 连接同一个后端
+```
+
+两条路线共用同一个 Django 后端。也就是说，**前端可以是小程序或 APK，但后端仍然需要启动，并且手机必须能访问到后端地址**。
+
+## 一、通用准备：后端地址、数据库和后端服务
 
 ### 1. 确认后端地址
 
@@ -196,7 +211,9 @@ http://10.54.173.45:8000/health/
 
 说明手机已经能连到后端。
 
-### 6. 构建小程序
+## 二、路线 A：运行微信小程序
+
+### 6. 构建微信小程序
 
 项目根目录运行：
 
@@ -223,6 +240,20 @@ apps/mp/dist/dev/mp-weixin
 
 然后点击“编译”，再扫码真机预览。
 
+小程序根目录是：
+
+```text
+apps/mp/dist/build/mp-weixin
+```
+
+如果使用开发模式产物，则导入：
+
+```text
+apps/mp/dist/dev/mp-weixin
+```
+
+## 三、路线 B：打包 Android APK
+
 ### 7. 使用 HBuilderX 运行到 Android 手机或模拟器
 
 如果需要把 uni-app 前端作为 Android App 运行或打 APK，使用 HBuilderX。
@@ -238,15 +269,15 @@ https://www.dcloud.io/hbuilderx.html
 2. 安装前端依赖：
 
 ```powershell
-cd E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
-npm install --registry=https://registry.npmmirror.com
+cd C:\Users\Lenovo\Desktop\aigc\aigc-campus-main\apps\mp
+cmd /c npx pnpm install
 ```
 
 3. 用 HBuilderX 打开源码项目：
 
 ```text
 文件 -> 打开目录
-E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
+C:\Users\Lenovo\Desktop\aigc\aigc-campus-main\apps\mp
 ```
 
 4. Android 手机开启 USB 调试：
@@ -268,20 +299,28 @@ E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
 
 ### 8. 构建 Android App 产物并云打包 APK
 
-当前项目更稳定的 APK 打包流程是先命令行构建 App 产物，再用 HBuilderX 打包该产物目录。
+当前项目更稳定的 APK 打包流程是用 HBuilderX 打开 `apps/mp` 源码目录，然后走云打包。
 
-1. 构建 App：
+1. 确认 App 配置：
 
-```powershell
-cd E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp
-npm.cmd run build:app
+```text
+apps/mp/src/manifest.json
 ```
 
-2. 用 HBuilderX 打开 App 构建产物：
+当前已配置：
+
+```text
+应用名：CampusClaw
+Android 包名：com.campusclaw.app
+版本名称：0.1.0
+版本号：100
+```
+
+2. 用 HBuilderX 打开源码目录：
 
 ```text
 文件 -> 打开目录
-E:\Develop\Pycharm\PycharmData\AIGC\aigc-campus\apps\mp\dist\build\app
+C:\Users\Lenovo\Desktop\aigc\aigc-campus-main\apps\mp
 ```
 
 3. 云打包 APK：
@@ -315,6 +354,46 @@ http://当前电脑IPv4:8000/health/
 ```
 
 APK 只包含前端，不包含 Django 后端。比赛现场演示时，电脑需要持续运行后端，手机和电脑需要连接同一个 Wi-Fi 或同一个手机热点。
+
+### 9. APK 安装后如何运行
+
+1. 电脑启动后端：
+
+```powershell
+conda activate aigc
+python apps/api/manage.py runserver 0.0.0.0:8000
+```
+
+2. 手机和电脑连接同一个 Wi-Fi 或同一个手机热点。
+
+3. 手机浏览器打开：
+
+```text
+http://当前电脑IPv4:8000/health/
+```
+
+4. 如果能看到：
+
+```json
+{ "status": "ok" }
+```
+
+5. 再打开手机上安装好的 CampusClaw APK。
+
+注意：如果换了 Wi-Fi，电脑 IPv4 变了，需要重新修改 `apps/mp/src/constants/index.ts` 里的 `BASE_URL`，然后重新云打包并安装 APK。
+
+## 四、哪种方式适合比赛
+
+```text
+只需要现场演示：
+  微信小程序真机预览 或 APK 都可以，电脑现场启动后端。
+
+比赛要求提交 APK：
+  用 HBuilderX 云打包 APK，提交 APK 文件。
+
+想让评委离开现场也能打开：
+  需要把 Django 后端部署到公网服务器，并把 BASE_URL 改成公网 HTTPS 地址。
+```
 
 ## AI 演示口令
 
