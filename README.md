@@ -395,6 +395,282 @@ http://当前电脑IPv4:8000/health/
   需要把 Django 后端部署到公网服务器，并把 BASE_URL 改成公网 HTTPS 地址。
 ```
 
+## 五、大模型应用与调用说明
+
+本项目的大模型能力不是单纯聊天，而是嵌入到 CampusClaw 的业务闭环里，主要用于：
+
+```text
+1. 普通 AI 对话
+2. 发帖、评论、组队、交易、个人资料等草稿生成
+3. AI 动作卡片：填充并发布 / 仅填充 / 仅生成
+4. 组队、恋爱、交易推荐
+5. 联系 TA 的破冰话术生成
+6. 推荐理由与推荐指数生成/组织
+```
+
+### 1. 大模型配置在哪里
+
+大模型配置文件在项目根目录：
+
+```text
+config.yaml
+```
+
+示例：
+
+```yaml
+agent:
+  api_key: "你的 key"
+  base_url: "你的 base url"
+  model: "模型名"
+  endpoint_path: "/chat/completions"
+  timeout_seconds: 30
+  temperature: 0.7
+  max_tokens: 800
+```
+
+也可以用环境变量覆盖：
+
+```text
+AGENT_API_KEY
+AGENT_BASE_URL
+AGENT_MODEL
+AGENT_ENDPOINT_PATH
+AGENT_TIMEOUT_SECONDS
+AGENT_TEMPERATURE
+AGENT_MAX_TOKENS
+```
+
+### 2. 后端大模型调用入口在哪里
+
+后端大模型底层调用在：
+
+```text
+apps/api/assistant/agent.py
+```
+
+主要函数：
+
+```text
+load_agent_config()      # 读取 config.yaml 或环境变量
+call_agent()             # 调用 OpenAI 风格 /chat/completions 接口，返回文本
+call_agent_json()        # 调用大模型并要求返回 JSON，用于结构化决策和草稿生成
+```
+
+也就是说，如果要检查“大模型到底怎么被调用”，优先看这个文件。
+
+### 3. AI 会话主流程在哪里
+
+AI 会话、意图判断、草稿生成和动作卡片生成的主逻辑在：
+
+```text
+apps/api/assistant/orchestrator.py
+```
+
+主要函数：
+
+```text
+plan_assistant_turn()
+  # 每次用户给 AI 发消息时的总入口
+  # 优先判断是否是推荐请求或破冰请求
+  # 否则进入普通 AI 草稿/动作卡片流程
+
+plan_turn_with_agent()
+  # 使用大模型判断用户意图、当前页面、缺失字段和下一步动作
+
+_build_agent_decision_messages()
+  # 组织给大模型的 system prompt / user prompt
+  # 要求模型判断 intent、user_signal、payload_patch 等结构化信息
+
+_build_payload_generation_messages()
+  # 组织草稿生成 prompt
+  # 让模型根据用户输入生成帖子、组队、交易、资料等表单字段
+```
+
+这个文件是“AI 怎么理解用户自然语言，并把它变成 CampusClaw 业务动作”的核心。
+
+### 4. AI 推荐算法在哪里
+
+组队、恋爱、交易推荐逻辑在：
+
+```text
+apps/api/assistant/recommendations.py
+```
+
+主要函数：
+
+```text
+build_recommendation_action()
+  # AI 推荐总入口，判断用户要推荐组队、恋爱还是交易
+
+build_team_recommendations()
+  # 组队推荐
+  # 主要根据用户本次输入关键词，匹配标题、摘要、详情、标签、所需技能
+
+build_dating_recommendations()
+  # 恋爱推荐
+  # 同时参考用户已保存的匹配偏好和本次输入
+  # 过滤不可见资料、本人、已跳过对象，并计算推荐指数
+
+build_trade_recommendations()
+  # 交易推荐
+  # 根据商品/交易关键词匹配标题、描述、成色、标签、交易类型
+
+build_icebreaker_action()
+  # 联系破冰
+  # 根据当前页面对象生成一条礼貌的私聊开场白
+```
+
+推荐原则：
+
+```text
+推荐对象必须来自真实数据库
+AI 不编造帖子、用户或交易商品
+每条推荐都带推荐指数和推荐理由
+用户自己决定是否联系、收藏、申请或表达感兴趣
+```
+
+### 5. AI 动作工具和业务执行在哪里
+
+AI 可执行动作白名单在：
+
+```text
+apps/api/assistant/skills.py
+```
+
+主要内容：
+
+```text
+SKILLS
+  # AI 允许生成和执行的动作注册表
+  # 包括发布帖子、评论、点赞、发布组队、申请组队、发布交易、收藏交易、发送私聊、保存资料等
+
+execute_action()
+  # 执行 AI 动作卡片
+  # 会检查动作状态、是否过期、动作类型是否在白名单里
+```
+
+典型执行函数：
+
+```text
+execute_forum_post_create()        # AI 确认后发布论坛帖子
+execute_forum_comment_create()     # AI 确认后发布评论
+execute_forum_post_like()          # AI 确认后点赞帖子
+execute_forum_comment_like()       # AI 确认后点赞评论
+execute_team_post_create()         # AI 确认后发布组队招募
+execute_team_apply()               # AI 确认后申请加入组队
+execute_trade_post_create()        # AI 确认后发布交易帖子
+execute_trade_favorite()           # AI 确认后收藏交易
+execute_context_chat_message_send()# AI 确认后联系对方并发送私聊
+execute_dating_signal()            # AI 确认后发送感兴趣/跳过信号
+execute_profile_update()           # AI 确认后保存个人资料
+```
+
+这部分体现了项目的安全设计：**大模型不能自由调用任意接口，只能通过后端白名单动作执行，并且需要用户确认。**
+
+### 6. AI 接口在哪里
+
+AI 相关 API 在：
+
+```text
+apps/api/assistant/views.py
+apps/api/assistant/urls.py
+```
+
+主要接口逻辑：
+
+```text
+AssistantMessageListCreateAPIView
+  # 前端发送 AI 消息后，后端创建用户消息、调用 AI 主流程、保存 AI 回复和动作卡片
+
+AssistantActionExecuteAPIView
+  # 用户点击“填充并发布”后，执行某个 AI 动作卡片
+```
+
+### 7. 前端 AI 调用在哪里
+
+前端请求 AI 接口的位置：
+
+```text
+apps/mp/src/services/assistant.ts
+```
+
+主要函数：
+
+```text
+sendAssistantMessage()
+  # 发送用户输入给后端 AI 会话接口
+
+executeAssistantAction()
+  # 执行 AI 动作卡片
+```
+
+半屏 AI 弹层组件：
+
+```text
+apps/mp/src/components/assistant/AssistantSheet.vue
+```
+
+主要函数：
+
+```text
+handleSend()
+  # 用户在半屏 AI 输入框发送消息
+
+handleFillAction()
+  # 用户点击“仅填充”，把 AI 草稿写入页面
+
+handleRecommendationAction()
+  # 用户点击推荐卡片里的联系、收藏、感兴趣、跳过等按钮
+
+handleExecuteAction()
+  # 用户确认执行 AI 动作
+```
+
+独立 AI 页面：
+
+```text
+apps/mp/src/pages/assistant/index.vue
+```
+
+AI 动作卡片展示组件：
+
+```text
+apps/mp/src/components/assistant/AssistantActionCard.vue
+```
+
+### 8. 一次完整 AI 调用链路
+
+以“帮我发一条组队帖子”为例：
+
+```text
+用户在小程序 AI 输入框输入需求
+  ↓
+前端 sendAssistantMessage()
+  ↓
+后端 AssistantMessageListCreateAPIView
+  ↓
+orchestrator.py 的 plan_assistant_turn()
+  ↓
+agent.py 的 call_agent_json() 调用大模型
+  ↓
+大模型返回结构化意图和草稿字段
+  ↓
+后端生成 AssistantActionProposal 动作卡片
+  ↓
+前端 AssistantActionCard 展示三个选择
+  ↓
+用户选择：填充并发布 / 仅填充 / 仅生成
+  ↓
+如果选择填充并发布，前端 executeAssistantAction()
+  ↓
+后端 skills.py 的 execute_action()
+  ↓
+执行对应业务函数，例如 execute_team_post_create()
+  ↓
+写入数据库并返回跳转结果
+```
+
 ## AI 演示口令
 
 进入小程序 AI 助手后，可以测试：
