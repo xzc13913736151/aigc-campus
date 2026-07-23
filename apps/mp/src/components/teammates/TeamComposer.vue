@@ -17,30 +17,38 @@
       <button class="btn btn-primary" @tap="$emit('profile')">完善资料</button>
     </view>
 
-    <view v-else class="form">
+    <view v-else class="form" :class="{ 'ai-filled': aiFilled }">
+      <view v-if="aiFilled" class="ai-fill-note">
+        <text>AI 已生成草稿</text>
+        <text class="helper">所有字段都可以逐项修改，发布前请再次确认。</text>
+      </view>
       <view class="field">
-        <text class="label">招募标题</text>
+        <text class="label">招募标题 · 必填</text>
         <input class="input" type="text" placeholder="例如：找 2 位同学一起做 AI 校园工具项目" :value="title" @input="setTitle" />
+        <text v-if="fieldError === 'title'" class="error">{{ errorMessage }}</text>
       </view>
       <view class="field">
-        <text class="label">一句话概述</text>
+        <text class="label">一句话概述 · 必填</text>
         <input class="input" type="text" placeholder="说明项目方向、节奏，以及你最想找什么样的人" :value="summary" @input="setSummary" />
+        <text v-if="fieldError === 'summary'" class="error">{{ errorMessage }}</text>
       </view>
       <view class="field">
-        <text class="label">详细说明</text>
+        <text class="label">详细说明 · 必填</text>
         <textarea class="textarea" placeholder="写清背景、目标、分工、时间安排和合作预期" :value="details" @input="setDetails" />
+        <text v-if="fieldError === 'details'" class="error">{{ errorMessage }}</text>
       </view>
       <view class="field">
-        <text class="label">目标人数</text>
+        <text class="label">目标人数 · 必填</text>
         <input class="input" type="number" placeholder="2 - 20" :value="targetSize" @input="setTargetSize" />
+        <text v-if="fieldError === 'targetSize'" class="error">{{ errorMessage }}</text>
       </view>
       <view class="field">
-        <text class="label">项目标签</text>
+        <text class="label">项目标签 · 选填</text>
         <input class="input" type="text" placeholder="AI, 产品, 比赛, 校园活动" :value="tagsText" @input="setTagsText" />
         <text class="helper">多个标签请用英文逗号分隔。</text>
       </view>
       <view class="field">
-        <text class="label">需要的技能</text>
+        <text class="label">需要的技能 · 选填</text>
         <input class="input" type="text" placeholder="前端, 后端, 设计, 文案" :value="skillsText" @input="setSkillsText" />
         <text class="helper">多个技能请用英文逗号分隔。</text>
       </view>
@@ -88,6 +96,8 @@ const details = ref('')
 const targetSize = ref('3')
 const tagsText = ref('')
 const skillsText = ref('')
+const aiFilled = ref(false)
+const fieldError = ref('')
 
 const titleText = computed(() => (props.editingPost ? '编辑组队招募' : '发起一条组队招募'))
 const submitText = computed(() => {
@@ -135,24 +145,32 @@ watch(
     } else if (typeof draft.required_skills === 'string') {
       skillsText.value = draft.required_skills
     }
+    aiFilled.value = true
+    setTimeout(() => {
+      aiFilled.value = false
+    }, 2400)
   },
   { immediate: true },
 )
 
 function setTitle(event: { detail?: { value?: string } }) {
   title.value = event.detail?.value ?? ''
+  clearFieldError('title')
 }
 
 function setSummary(event: { detail?: { value?: string } }) {
   summary.value = event.detail?.value ?? ''
+  clearFieldError('summary')
 }
 
 function setDetails(event: { detail?: { value?: string } }) {
   details.value = event.detail?.value ?? ''
+  clearFieldError('details')
 }
 
 function setTargetSize(event: { detail?: { value?: string } }) {
   targetSize.value = event.detail?.value ?? ''
+  clearFieldError('targetSize')
 }
 
 function setTagsText(event: { detail?: { value?: string } }) {
@@ -173,18 +191,29 @@ function splitList(value: string) {
 function validateForm() {
   const parsedTargetSize = Number(targetSize.value)
   if (title.value.trim().length < 4) {
+    fieldError.value = 'title'
     return '标题至少需要 4 个字'
   }
   if (summary.value.trim().length < 8) {
+    fieldError.value = 'summary'
     return '一句话概述至少需要 8 个字'
   }
   if (details.value.trim().length < 20) {
+    fieldError.value = 'details'
     return '详细说明至少需要 20 个字'
   }
   if (!Number.isInteger(parsedTargetSize) || parsedTargetSize < 2 || parsedTargetSize > 20) {
+    fieldError.value = 'targetSize'
     return '目标人数需要在 2 到 20 之间'
   }
   return ''
+}
+
+function clearFieldError(field: string) {
+  if (fieldError.value === field) {
+    fieldError.value = ''
+    errorMessage.value = ''
+  }
 }
 
 async function handleSubmit() {
@@ -237,10 +266,14 @@ function resetForm() {
   tagsText.value = ''
   skillsText.value = ''
   errorMessage.value = ''
+  fieldError.value = ''
+  aiFilled.value = false
 }
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
 .composer-actions {
   display: flex;
   gap: 20rpx;
@@ -251,7 +284,7 @@ function resetForm() {
   height: 88rpx;
   min-height: 88rpx;
   padding: 0 32rpx;
-  border-radius: 999rpx;
+  border-radius: t.$radius-sm;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -271,13 +304,13 @@ function resetForm() {
 
 .primary-action {
   flex: 1;
-  background: #f16b4f;
+  background: #c15f3c;
 }
 
 .secondary-action {
   flex: 0 0 190rpx;
   background: rgba(255, 255, 255, 0.88);
-  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  border: 1rpx solid t.$color-line;
 }
 
 .primary-text {
@@ -285,6 +318,36 @@ function resetForm() {
 }
 
 .secondary-text {
-  color: #102133;
+  color: #2f2a24;
+}
+
+.ai-fill-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  padding: 20rpx;
+  border: 1rpx solid t.$color-brand-soft;
+  border-radius: t.$radius-sm;
+  background: t.$color-surface;
+  color: t.$color-ai;
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+.ai-filled .input,
+.ai-filled .textarea {
+  animation: ai-field-highlight 2.4s ease;
+}
+
+@keyframes ai-field-highlight {
+  0%,
+  35% {
+    border-color: t.$color-brand;
+    background: t.$color-brand-soft;
+  }
+  100% {
+    border-color: t.$color-line;
+    background: t.$color-input;
+  }
 }
 </style>

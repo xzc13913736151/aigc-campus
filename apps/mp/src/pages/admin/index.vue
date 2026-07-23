@@ -430,7 +430,7 @@ onShow(() => {
 .stat-value {
   font-size: 44rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .section-head {
@@ -453,7 +453,7 @@ onShow(() => {
 
 .filter-btn.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .report-card {
@@ -483,7 +483,7 @@ onShow(() => {
 
 .status-open {
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .status-reviewing {
@@ -493,7 +493,7 @@ onShow(() => {
 
 .status-resolved {
   background: rgba(77, 166, 106, 0.18);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .status-rejected {
@@ -515,7 +515,7 @@ onShow(() => {
   border: 1rpx solid rgba(16, 33, 51, 0.12);
   font-size: 24rpx;
   line-height: 1.7;
-  color: #102133;
+  color: #2f2a24;
   word-break: break-all;
 }
 
@@ -533,7 +533,7 @@ onShow(() => {
 }
 
 .log-title {
-  color: #102133;
+  color: #2f2a24;
   font-size: 27rpx;
   font-weight: 800;
 }

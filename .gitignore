@@ -40,3 +40,6 @@ project.private.config.json
 
 # OS
 Thumbs.db
+
+# 启动项
+startup.me

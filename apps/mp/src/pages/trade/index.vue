@@ -459,7 +459,7 @@ function goLogin() {
   background:
     radial-gradient(circle at top left, rgba(241, 107, 79, 0.18), transparent 34%),
     radial-gradient(circle at bottom right, rgba(216, 164, 75, 0.2), transparent 30%),
-    #f7f1e8;
+    #f5f1e8;
   padding-bottom: 180rpx;
 }
 
@@ -480,7 +480,7 @@ function goLogin() {
 .stat-value {
   font-size: 34rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .toolbar-head {
@@ -509,7 +509,7 @@ function goLogin() {
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.86);
   border: 1rpx solid rgba(16, 33, 51, 0.1);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
   line-height: 1;
@@ -523,7 +523,7 @@ function goLogin() {
 .type-chip.active {
   background: rgba(241, 107, 79, 0.14);
   border-color: rgba(241, 107, 79, 0.22);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .result-head {
@@ -575,7 +575,7 @@ function goLogin() {
 
 .status-open {
   background: rgba(46, 125, 73, 0.12);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .status-reserved {
@@ -585,7 +585,7 @@ function goLogin() {
 
 .status-completed {
   background: rgba(74, 144, 226, 0.14);
-  color: #2f6faa;
+  color: #8b654f;
 }
 
 .status-closed {
@@ -594,26 +594,26 @@ function goLogin() {
 }
 
 .post-type-badge.sell {
-  background: #2e7d49;
+  background: #557a5d;
 }
 
 .post-type-badge.buy {
-  background: #4a90e2;
+  background: #8b654f;
 }
 
 .post-type-badge.exchange {
-  background: #f5a44c;
+  background: #b77a32;
 }
 
 .post-type-badge.service {
-  background: #9b59b6;
+  background: #8b654f;
 }
 
 .post-price {
   margin-left: auto;
   font-size: 32rpx;
   font-weight: 700;
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .my-trade-list {
@@ -638,7 +638,7 @@ function goLogin() {
 
 .my-trade-title {
   min-width: 0;
-  color: #102133;
+  color: #2f2a24;
   font-size: 27rpx;
   font-weight: 800;
 }
@@ -664,7 +664,7 @@ function goLogin() {
   border: 0;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.9);
-  color: #44515f;
+  color: #6f675d;
   font-size: 23rpx;
   font-weight: 700;
   line-height: 1;
@@ -675,19 +675,19 @@ function goLogin() {
 }
 
 .status-chip.active {
-  background: #102133;
+  background: #2f2a24;
   color: #fff;
 }
 
 .post-title {
   font-size: 30rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .post-desc {
   font-size: 26rpx;
-  color: #7a7f87;
+  color: #6f675d;
   line-height: 1.5;
 }
 
@@ -712,7 +712,7 @@ function goLogin() {
   text-align: center;
   padding: 24rpx;
   font-size: 24rpx;
-  color: #7a7f87;
+  color: #6f675d;
 }
 
 .loading-state {

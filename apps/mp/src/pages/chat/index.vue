@@ -1,10 +1,17 @@
 <template>
   <view class="container">
     <view class="chat-header">
-      <view class="header-copy">
-        <text class="chat-title">{{ threadTitle }}</text>
-        <view style="height: 6rpx" />
-        <text class="chat-subtitle">{{ typingText || compactSocketStatusText }}</text>
+      <view class="header-profile">
+        <UserAvatar
+          class="chat-avatar"
+          :user-id="thread?.counterpart?.id || ''"
+          :name="threadTitle"
+        />
+        <view class="header-copy">
+          <text class="chat-title">{{ threadTitle }}</text>
+          <view style="height: 6rpx" />
+          <text class="chat-subtitle">{{ typingText || compactSocketStatusText }}</text>
+        </view>
       </view>
       <button v-if="threadId" class="header-action" :disabled="hidingThread" @tap="handleHideThread">
         {{ hidingThread ? '处理中' : '隐藏' }}
@@ -29,9 +36,11 @@
           class="message-row"
           :class="{ mine: isMine(item.message.sender.id) }"
         >
-          <view class="avatar">
-            <text>{{ getSenderInitial(item.message.sender) }}</text>
-          </view>
+          <UserAvatar
+            class="chat-avatar"
+            :user-id="item.message.sender.id"
+            :name="getSenderName(item.message.sender)"
+          />
           <view class="message-stack">
             <view class="message-bubble" :class="{ image: isImageMessage(item.message), withdrawn: item.message.is_withdrawn }">
               <image
@@ -71,15 +80,21 @@
     </view>
 
     <view class="composer">
-      <button class="image-button" :disabled="sendingImage || !threadId" @tap="chooseAndSendImage">
-        {{ sendingImage ? '...' : '+' }}
+      <button
+        class="image-button"
+        :class="{ loading: sendingImage }"
+        :disabled="sendingImage || !threadId"
+        aria-label="选择并发送图片"
+        @tap="chooseAndSendImage"
+      >
+        <text class="image-button-label">{{ sendingImage ? '发送中' : '发图' }}</text>
       </button>
       <textarea
         v-model="messageBody"
         class="chat-input"
         auto-height
         confirm-type="send"
-        cursor-color="#f16b4f"
+        cursor-color="#c15f3c"
         :show-confirm-bar="false"
         placeholder="输入消息"
         maxlength="500"
@@ -100,6 +115,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { onHide, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 
 import { BASE_URL } from '../../constants'
+import UserAvatar from '../../components/UserAvatar.vue'
 import type { ChatMessage, ChatThread, UserSummary } from '../../types/api'
 import {
   createChatThread,
@@ -651,15 +667,22 @@ function formatDate(value: string) {
   min-width: 0;
 }
 
+.header-profile {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
 .chat-title {
   display: block;
-  color: #102133;
+  color: #2f2a24;
   font-size: 34rpx;
   font-weight: 800;
 }
 
 .chat-subtitle {
-  color: #7a7f87;
+  color: #6f675d;
   font-size: 22rpx;
 }
 
@@ -672,7 +695,7 @@ function formatDate(value: string) {
   border: 0;
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.08);
-  color: #44515f;
+  color: #6f675d;
   font-size: 23rpx;
   line-height: 1;
 }
@@ -695,6 +718,18 @@ function formatDate(value: string) {
   margin-bottom: 24rpx;
 }
 
+.chat-avatar {
+  width: 68rpx !important;
+  height: 68rpx !important;
+  min-width: 68rpx !important;
+  min-height: 68rpx !important;
+  flex: 0 0 68rpx !important;
+  overflow: hidden;
+  border: 1rpx solid #ded6c9;
+  border-radius: 20rpx;
+  background: #f1ece2;
+}
+
 .time-divider {
   display: flex;
   justify-content: center;
@@ -711,25 +746,6 @@ function formatDate(value: string) {
 
 .message-row.mine {
   flex-direction: row-reverse;
-}
-
-.avatar {
-  width: 64rpx;
-  height: 64rpx;
-  border-radius: 18rpx;
-  background: rgba(16, 33, 51, 0.1);
-  color: #102133;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26rpx;
-  font-weight: 800;
-  flex-shrink: 0;
-}
-
-.message-row.mine .avatar {
-  background: rgba(241, 107, 79, 0.16);
-  color: #f16b4f;
 }
 
 .message-stack {
@@ -752,8 +768,8 @@ function formatDate(value: string) {
 
 .message-row.mine .message-bubble {
   border-radius: 24rpx 8rpx 24rpx 24rpx;
-  background: #f16b4f;
-  border-color: #f16b4f;
+  background: #c15f3c;
+  border-color: #c15f3c;
 }
 
 .message-bubble.image {
@@ -770,7 +786,7 @@ function formatDate(value: string) {
 .bubble-text {
   font-size: 29rpx;
   line-height: 1.6;
-  color: #102133;
+  color: #2f2a24;
   white-space: pre-wrap;
 }
 
@@ -779,7 +795,7 @@ function formatDate(value: string) {
 }
 
 .bubble-text.withdrawn {
-  color: #7a7f87;
+  color: #6f675d;
   font-style: italic;
 }
 
@@ -797,7 +813,7 @@ function formatDate(value: string) {
   border-radius: 18rpx;
   background: rgba(16, 33, 51, 0.08);
   border: 1rpx dashed rgba(16, 33, 51, 0.18);
-  color: #6b7280;
+  color: #6f675d;
   font-size: 26rpx;
   display: flex;
   align-items: center;
@@ -813,7 +829,7 @@ function formatDate(value: string) {
 }
 
 .message-meta .failed {
-  color: #ef4444;
+  color: #b75347;
 }
 
 .empty-chat {
@@ -856,18 +872,29 @@ function formatDate(value: string) {
 }
 
 .image-button {
-  width: 68rpx;
-  padding: 0;
-  background: rgba(16, 33, 51, 0.1);
-  color: #102133;
-  font-size: 42rpx;
-  font-weight: 500;
+  width: 96rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid rgba(193, 95, 60, 0.2);
+  border-radius: 20rpx;
+  background: #f3d8ca;
+  color: #9f472e;
+  font-size: 24rpx;
+  font-weight: 650;
+}
+
+.image-button.loading {
+  width: 112rpx;
+}
+
+.image-button-label {
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .send-button {
   min-width: 104rpx;
   padding: 0 24rpx;
-  background: #f16b4f;
+  background: #c15f3c;
   color: #fff;
   font-size: 25rpx;
   font-weight: 800;
@@ -875,7 +902,7 @@ function formatDate(value: string) {
 
 .send-button.disabled {
   background: rgba(16, 33, 51, 0.12);
-  color: #8a929c;
+  color: #999084;
 }
 
 .image-button::after,
@@ -891,11 +918,11 @@ function formatDate(value: string) {
   border-radius: 24rpx;
   background: #fff;
   border: 1rpx solid rgba(16, 33, 51, 0.08);
-  color: #102133;
+  color: #2f2a24;
   font-size: 28rpx;
   line-height: 40rpx;
-  caret-color: #f16b4f;
-  cursor-color: #f16b4f;
+  caret-color: #c15f3c;
+  cursor-color: #c15f3c;
   overflow-y: auto;
 }
 

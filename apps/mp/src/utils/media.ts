@@ -7,11 +7,18 @@ export function getMediaUrl(url?: string | null) {
   if (!value) {
     return ''
   }
-  if (/^(https?:|wxfile:|file:|blob:|data:)/i.test(value)) {
+  if (/^(wxfile:|file:|blob:|data:)/i.test(value)) {
     return value
   }
 
   const origin = BASE_URL.replace(API_PREFIX_PATTERN, '')
+  if (/^https?:\/\//i.test(value)) {
+    const loopbackMatch = value.match(
+      /^https?:\/\/(?:127\.0\.0\.1|localhost|0\.0\.0\.0)(?::\d+)?(\/.*)?$/i,
+    )
+    return loopbackMatch ? `${origin}${loopbackMatch[1] || ''}` : value
+  }
+
   return `${origin}${value.startsWith('/') ? value : `/${value}`}`
 }
 

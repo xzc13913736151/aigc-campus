@@ -101,7 +101,7 @@ function goTrade() {
   background:
     radial-gradient(circle at top left, rgba(241, 107, 79, 0.18), transparent 34%),
     radial-gradient(circle at bottom right, rgba(216, 164, 75, 0.2), transparent 30%),
-    #f7f1e8;
+    #f5f1e8;
   padding-bottom: 180rpx;
 }
 
@@ -137,15 +137,15 @@ function goTrade() {
 }
 
 .match-icon-wrap.teammates {
-  background: linear-gradient(135deg, #4a90e2, #67b3f8);
+  background: linear-gradient(135deg, #8b654f, #ad8b76);
 }
 
 .match-icon-wrap.dating {
-  background: linear-gradient(135deg, #f16b4f, #ff8a6b);
+  background: linear-gradient(135deg, #c15f3c, #ff8a6b);
 }
 
 .match-icon-wrap.trade {
-  background: linear-gradient(135deg, #2e7d49, #52c775);
+  background: linear-gradient(135deg, #557a5d, #52c775);
 }
 
 .match-icon-text {
@@ -162,13 +162,13 @@ function goTrade() {
 .match-title {
   font-size: 32rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
   display: block;
 }
 
 .match-desc {
   font-size: 24rpx;
-  color: #7a7f87;
+  color: #6f675d;
   margin-top: 6rpx;
   display: block;
 }
@@ -184,7 +184,7 @@ function goTrade() {
   padding: 6rpx 14rpx;
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.06);
-  color: #102133;
+  color: #2f2a24;
   font-size: 20rpx;
 }
 
@@ -199,13 +199,13 @@ function goTrade() {
 .tips-title {
   font-size: 28rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .tips-item {
   display: block;
   font-size: 24rpx;
-  color: #6b7280;
+  color: #6f675d;
   line-height: 1.8;
 }
 </style>

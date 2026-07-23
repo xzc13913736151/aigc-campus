@@ -81,7 +81,15 @@ defineEmits<{
 }>()
 
 const disabled = computed(() => props.action.status !== 'pending' || Boolean(props.busy))
-const statusText = computed(() => (props.action.status === 'pending' ? '待确认' : '已处理'))
+const statusText = computed(() => {
+  const labels: Record<string, string> = {
+    pending: '待确认',
+    executed: '已执行',
+    dismissed: '已取消',
+    expired: '已过期',
+  }
+  return labels[props.action.status] || '状态已更新'
+})
 
 const previewText = computed(() => {
   const preview = props.action.preview || {}
@@ -126,12 +134,14 @@ function fillButtonText(item: Record<string, unknown>) {
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
 .action-card {
-  padding: 22rpx;
-  border-radius: 26rpx;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1rpx solid rgba(241, 107, 79, 0.18);
-  box-shadow: 0 14rpx 34rpx rgba(16, 33, 51, 0.06);
+  padding: 24rpx;
+  border-radius: t.$radius-md;
+  background: t.$color-card;
+  border: 1rpx solid t.$color-line;
+  border-left: 6rpx solid t.$color-ai;
 }
 
 .action-head {
@@ -147,22 +157,22 @@ function fillButtonText(item: Record<string, unknown>) {
 
 .action-kicker {
   font-size: 20rpx;
-  font-weight: 800;
-  color: #f16b4f;
+  font-weight: 650;
+  color: t.$color-ai;
 }
 
 .action-title {
   font-size: 30rpx;
-  font-weight: 800;
-  color: #102133;
+  font-weight: 650;
+  color: t.$color-ink;
 }
 
 .action-status {
   flex-shrink: 0;
   padding: 8rpx 14rpx;
-  border-radius: 999rpx;
-  background: rgba(241, 107, 79, 0.1);
-  color: #f16b4f;
+  border-radius: t.$radius-sm;
+  background: t.$color-brand-soft;
+  color: t.$color-brand-deep;
   font-size: 20rpx;
   font-weight: 700;
 }
@@ -170,7 +180,7 @@ function fillButtonText(item: Record<string, unknown>) {
 .action-desc {
   font-size: 25rpx;
   line-height: 1.6;
-  color: #44515f;
+  color: t.$color-ink-secondary;
   white-space: pre-wrap;
 }
 
@@ -182,13 +192,13 @@ function fillButtonText(item: Record<string, unknown>) {
 }
 
 .action-button {
-  min-height: 62rpx;
+  min-height: 72rpx;
   padding: 0 20rpx;
   margin: 0;
-  border-radius: 999rpx;
-  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  border-radius: t.$radius-sm;
+  border: 1rpx solid t.$color-line;
   font-size: 23rpx;
-  font-weight: 800;
+  font-weight: 620;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -196,18 +206,18 @@ function fillButtonText(item: Record<string, unknown>) {
 }
 
 .action-button.primary {
-  background: #f16b4f;
-  color: #fff;
-  border-color: #f16b4f;
+  background: t.$color-brand;
+  color: t.$color-inverse;
+  border-color: t.$color-brand;
 }
 
 .action-button.ghost {
-  background: rgba(255, 255, 255, 0.86);
-  color: #102133;
+  background: t.$color-surface;
+  color: t.$color-ink;
 }
 
 .action-button.compact {
-  min-height: 54rpx;
+  min-height: 68rpx;
   padding: 0 18rpx;
   font-size: 22rpx;
 }
@@ -224,9 +234,9 @@ function fillButtonText(item: Record<string, unknown>) {
 
 .recommendation-card {
   padding: 18rpx;
-  border-radius: 22rpx;
-  background: rgba(255, 250, 245, 0.92);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
+  border-radius: t.$radius-sm;
+  background: t.$color-surface;
+  border: 1rpx solid t.$color-line;
 }
 
 .recommendation-head {
@@ -246,23 +256,23 @@ function fillButtonText(item: Record<string, unknown>) {
 
 .recommendation-title {
   font-size: 27rpx;
-  font-weight: 800;
-  color: #102133;
+  font-weight: 650;
+  color: t.$color-ink;
 }
 
 .recommendation-subtitle,
 .recommendation-reason {
   font-size: 23rpx;
   line-height: 1.5;
-  color: #68727f;
+  color: t.$color-ink-secondary;
 }
 
 .recommendation-score {
   width: 76rpx;
   height: 76rpx;
-  border-radius: 24rpx;
-  background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  border-radius: t.$radius-sm;
+  background: t.$color-brand-soft;
+  color: t.$color-brand-deep;
   display: flex;
   flex-direction: column;
   align-items: center;

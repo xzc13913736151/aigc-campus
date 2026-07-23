@@ -85,7 +85,7 @@
         :maxlength="500"
         :auto-height="true"
         confirm-type="send"
-        cursor-color="#f16b4f"
+        cursor-color="#c15f3c"
         :show-confirm-bar="false"
         @confirm="handleSend"
       />
@@ -495,7 +495,7 @@ function formatTime(value: string) {
   flex-direction: column;
   height: 100vh;
   min-height: 0;
-  background: #f7f1e8;
+  background: #f5f1e8;
   padding-bottom: calc(112rpx + env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
@@ -506,7 +506,7 @@ function formatTime(value: string) {
   justify-content: space-between;
   padding: 20rpx 32rpx;
   padding-top: calc(20rpx + env(safe-area-inset-top));
-  background: #fffaf5;
+  background: #fffcf7;
   border-bottom: 1rpx solid rgba(16, 33, 51, 0.08);
 }
 
@@ -518,12 +518,12 @@ function formatTime(value: string) {
 .header-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .header-desc {
   font-size: 22rpx;
-  color: #7a7f87;
+  color: #6f675d;
   margin-top: 4rpx;
 }
 
@@ -533,7 +533,7 @@ function formatTime(value: string) {
   border: 1rpx solid rgba(241, 107, 79, 0.3);
   border-radius: 24rpx;
   font-size: 24rpx;
-  color: #f16b4f;
+  color: #c15f3c;
   font-weight: 600;
 }
 
@@ -559,12 +559,12 @@ function formatTime(value: string) {
 .empty-title {
   font-size: 32rpx;
   font-weight: 600;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .empty-desc {
   font-size: 28rpx;
-  color: #7a7f87;
+  color: #6f675d;
 }
 
 .quick-replies {
@@ -580,7 +580,7 @@ function formatTime(value: string) {
   border: 1rpx solid rgba(16, 33, 51, 0.12);
   border-radius: 999rpx;
   font-size: 24rpx;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .message-item {
@@ -608,7 +608,7 @@ function formatTime(value: string) {
 }
 
 .avatar-assistant {
-  background: linear-gradient(135deg, #f16b4f, #ff8a6b);
+  background: linear-gradient(135deg, #c15f3c, #ff8a6b);
   color: #fff;
   font-size: 22rpx;
   font-weight: 700;
@@ -616,7 +616,7 @@ function formatTime(value: string) {
 
 .avatar-user {
   background: rgba(241, 107, 79, 0.18);
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 22rpx;
   font-weight: 700;
 }
@@ -640,20 +640,20 @@ function formatTime(value: string) {
 .message-text {
   font-size: 28rpx;
   line-height: 1.6;
-  color: #102133;
+  color: #2f2a24;
   white-space: pre-wrap;
 }
 
 .message-time {
   display: block;
   font-size: 20rpx;
-  color: #7a7f87;
+  color: #6f675d;
   margin-top: 8rpx;
   text-align: right;
 }
 
 .loading-text {
-  color: #7a7f87;
+  color: #6f675d;
   font-style: italic;
 }
 
@@ -665,7 +665,7 @@ function formatTime(value: string) {
   display: flex;
   align-items: flex-end;
   padding: 12rpx 24rpx calc(12rpx + env(safe-area-inset-bottom));
-  background: #fffaf5;
+  background: #fffcf7;
   border-top: 1rpx solid rgba(16, 33, 51, 0.08);
   gap: 16rpx;
 }
@@ -691,10 +691,10 @@ function formatTime(value: string) {
   background: rgba(255, 250, 245, 0.98);
   border: 1rpx solid rgba(16, 33, 51, 0.08);
   font-size: 27rpx;
-  color: #102133;
+  color: #2f2a24;
   line-height: 38rpx;
-  caret-color: #f16b4f;
-  cursor-color: #f16b4f;
+  caret-color: #c15f3c;
+  cursor-color: #c15f3c;
   overflow-y: auto;
 }
 
@@ -721,6 +721,6 @@ function formatTime(value: string) {
 }
 
 .send-btn.active {
-  background: #f16b4f;
+  background: #c15f3c;
 }
 </style>

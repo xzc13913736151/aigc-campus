@@ -120,31 +120,6 @@
         </view>
       </view>
 
-      <view class="card section">
-        <text class="section-title">我的概览</text>
-        <view style="height: 10rpx" />
-        <text class="section-desc">帮助你快速确认当前账号活跃情况和重要状态。</text>
-        <view style="height: 20rpx" />
-
-        <view class="grid overview-grid">
-          <view class="overview-card">
-            <text class="overview-title">论坛</text>
-            <view style="height: 8rpx" />
-            <text class="overview-value">{{ forumCount }} 条帖子</text>
-          </view>
-          <view class="overview-card">
-            <text class="overview-title">组队</text>
-            <view style="height: 8rpx" />
-            <text class="overview-value">{{ teamCount }} 条招募</text>
-          </view>
-          <view class="overview-card">
-            <text class="overview-title">黑名单</text>
-            <view style="height: 8rpx" />
-            <text class="overview-value">{{ blockCount }} 位用户</text>
-          </view>
-        </view>
-      </view>
-
       <view class="card">
         <text class="section-title">账号操作</text>
         <view style="height: 10rpx" />
@@ -165,7 +140,6 @@ import { onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CachedImage from '../../components/CachedImage.vue'
 import { fetchForumPosts, fetchMyForumPosts } from '../../services/forum'
-import { fetchMyBlocks } from '../../services/moderation'
 import { fetchMyProfile } from '../../services/profile'
 import { fetchMyTeammatePosts } from '../../services/teammates'
 import { currentUser, ensureAuthenticated, isAuthenticated, logoutUser, redirectToLogin } from '../../utils/auth'
@@ -178,7 +152,6 @@ const avatarUrl = ref('')
 const profileComplete = ref(false)
 const forumCount = ref(0)
 const teamCount = ref(0)
-const blockCount = ref(0)
 
 const profile = reactive({
   claw_id: '',
@@ -239,11 +212,10 @@ onShow(async () => {
   }
 
   try {
-    const [myProfile, myForumPosts, myTeamPosts, blocks] = await Promise.all([
+    const [myProfile, myForumPosts, myTeamPosts] = await Promise.all([
       fetchMyProfile(),
       fetchMyForumPosts(),
       fetchMyTeammatePosts(),
-      fetchMyBlocks(),
     ])
 
     avatarUrl.value = myProfile.avatar_url ?? ''
@@ -258,7 +230,6 @@ onShow(async () => {
     profileComplete.value = isAdmin.value || Boolean(myProfile.headline.trim() && myProfile.major.trim() && myProfile.grade.trim())
     forumCount.value = myForumPosts.length
     teamCount.value = myTeamPosts.length
-    blockCount.value = blocks.length
   } catch (error) {
     showToast(error instanceof Error ? error.message : '加载个人中心失败')
   }
@@ -269,7 +240,6 @@ function resetLocalState() {
   profileComplete.value = false
   forumCount.value = 0
   teamCount.value = 0
-  blockCount.value = 0
   profile.claw_id = ''
   profile.nickname = ''
   profile.headline = ''
@@ -323,7 +293,7 @@ function goBlocks() {
 }
 
 function goForum() {
-  uni.switchTab({ url: '/pages/forum/index' })
+  uni.reLaunch({ url: '/pages/forum/index?mine=1' })
 }
 
 function goAssistant() {
@@ -387,7 +357,7 @@ async function logout() {
   justify-content: center;
   font-size: 46rpx;
   font-weight: 700;
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .status-row {
@@ -400,24 +370,24 @@ async function logout() {
   padding: 12rpx 20rpx;
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.08);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
 }
 
 .status-chip.complete {
   background: rgba(77, 166, 106, 0.16);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .claw-chip {
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .admin-chip {
   background: rgba(16, 33, 51, 0.12);
-  color: #102133;
+  color: #2f2a24;
 }
 
 .summary-grid {
@@ -433,7 +403,7 @@ async function logout() {
 .summary-value {
   font-size: 34rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .profile-grid {
@@ -452,38 +422,19 @@ async function logout() {
 .profile-label {
   display: block;
   font-size: 22rpx;
-  color: #6b7280;
+  color: #6f675d;
 }
 
 .profile-value {
   display: block;
   margin-top: 8rpx;
   font-size: 28rpx;
-  color: #102133;
+  color: #2f2a24;
   font-weight: 600;
 }
 
-.action-grid,
-.overview-grid {
+.action-grid {
   display: grid;
   gap: 20rpx;
-}
-
-.overview-card {
-  padding: 22rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.74);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
-}
-
-.overview-title {
-  font-size: 24rpx;
-  color: #6b7280;
-}
-
-.overview-value {
-  font-size: 30rpx;
-  font-weight: 700;
-  color: #102133;
 }
 </style>

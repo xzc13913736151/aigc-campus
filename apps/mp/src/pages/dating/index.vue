@@ -120,7 +120,7 @@
               <view style="height: 8rpx" />
               <text class="helper">打开后，别人就能在候选人列表里看到你。</text>
             </view>
-            <switch :checked="profileForm.is_visible" color="#f16b4f" @change="handleVisibleChange" />
+            <switch :checked="profileForm.is_visible" color="#c15f3c" @change="handleVisibleChange" />
           </view>
           <button class="btn btn-primary" :disabled="savingProfile" @tap="saveProfile">
             {{ savingProfile ? '保存中...' : '保存展示资料' }}
@@ -835,19 +835,19 @@ function startChat(targetUserId: string) {
   padding: 12rpx 20rpx;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.84);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
 }
 
 .status-chip.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .status-chip.complete {
   background: rgba(77, 166, 106, 0.18);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .stats-grid {
@@ -862,7 +862,7 @@ function startChat(targetUserId: string) {
   display: block;
   font-size: 44rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .section-head,
@@ -910,7 +910,7 @@ function startChat(targetUserId: string) {
   border: 0;
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.08);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 700;
   line-height: 1;
@@ -921,7 +921,7 @@ function startChat(targetUserId: string) {
 
 .height-toggle.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .height-toggle::after {
@@ -946,7 +946,7 @@ function startChat(targetUserId: string) {
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 22rpx;
   font-weight: 700;
 }

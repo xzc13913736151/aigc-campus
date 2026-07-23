@@ -159,10 +159,27 @@
         </view>
         <view style="height: 20rpx" />
 
-        <view v-if="notifications.length" class="grid">
-          <view v-for="item in notifications" :key="item.id" class="card message-card" :class="{ unread: !item.is_read }">
+        <scroll-view scroll-x class="notification-tabs" :show-scrollbar="false">
+          <view class="notification-tab-row">
+            <button
+              v-for="tab in notificationTabs"
+              :key="tab.value"
+              class="notification-tab"
+              :class="{ active: activeNotificationTab === tab.value }"
+              @tap="activeNotificationTab = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </view>
+        </scroll-view>
+        <view style="height: 20rpx" />
+
+        <view v-if="filteredNotifications.length" class="grid">
+          <view v-for="item in filteredNotifications" :key="item.id" class="card message-card" :class="{ unread: !item.is_read }">
             <view class="message-head">
               <view style="flex: 1">
+                <text class="notification-kind">{{ getNotificationKindLabel(item) }}</text>
+                <view style="height: 8rpx" />
                 <text class="section-title thread-name">{{ item.title }}</text>
                 <view style="height: 8rpx" />
                 <text class="helper">{{ getActorName(item) }} · {{ formatDate(item.created_at) }}</text>
@@ -187,7 +204,7 @@
         </view>
 
         <view v-else class="empty">
-          <text class="section-desc">当前还没有通知提醒，等有新的互动时会出现在这里。</text>
+          <text class="section-desc">{{ activeNotificationTab === 'agent' ? 'Agent 操作记录接口尚未提供；后续可在这里展示草稿、已执行、过期和已取消状态。' : '这个分类暂时没有新消息。' }}</text>
         </view>
       </view>
     </view>
@@ -230,6 +247,7 @@ const loadingNotifications = ref(false)
 const loadingThreads = ref(false)
 const hidingThreadId = ref('')
 const markingId = ref('')
+const activeNotificationTab = ref<'all' | 'team' | 'interaction' | 'trade' | 'agent'>('all')
 const contactKeyword = ref('')
 const contactResults = ref<ContactSearchUser[]>([])
 const searchingContacts = ref(false)
@@ -241,6 +259,18 @@ let notificationSocket: UniApp.SocketTask | null = null
 let inboxSocket: UniApp.SocketTask | null = null
 
 const unreadThreadCount = computed(() => threads.value.filter((thread) => thread.unread_count > 0).length)
+const notificationTabs = [
+  { value: 'all' as const, label: '全部' },
+  { value: 'team' as const, label: '组队申请' },
+  { value: 'interaction' as const, label: '互动通知' },
+  { value: 'trade' as const, label: '交易消息' },
+  { value: 'agent' as const, label: 'Agent 记录' },
+]
+const filteredNotifications = computed(() => {
+  if (activeNotificationTab.value === 'all') return notifications.value
+  if (activeNotificationTab.value === 'agent') return []
+  return notifications.value.filter((item) => getNotificationKind(item) === activeNotificationTab.value)
+})
 
 onShow(() => {
   if (hasToken.value) {
@@ -428,6 +458,21 @@ function getActorName(item: NotificationItem) {
   return item.actor?.nickname || item.actor?.full_name || item.actor?.email || '系统'
 }
 
+function getNotificationKind(item: NotificationItem) {
+  if (item.type.startsWith('team_') || item.target_type === 'team_post') return 'team'
+  if (item.target_type === 'trade_post' || item.type.startsWith('trade_')) return 'trade'
+  return 'interaction'
+}
+
+function getNotificationKindLabel(item: NotificationItem) {
+  const labels = {
+    team: '组队申请',
+    trade: '交易消息',
+    interaction: '互动通知',
+  }
+  return labels[getNotificationKind(item) as keyof typeof labels]
+}
+
 function getCounterpartName(thread: ChatThread) {
   return thread.counterpart?.nickname || thread.counterpart?.full_name || thread.counterpart?.email || '校园用户'
 }
@@ -528,6 +573,8 @@ function goForum() {
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
 .hero {
   padding-top: 4rpx;
 }
@@ -542,19 +589,19 @@ function goForum() {
   padding: 12rpx 20rpx;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.84);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
 }
 
 .status-chip.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .status-chip.complete {
   background: rgba(77, 166, 106, 0.18);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .summary-grid {
@@ -570,7 +617,7 @@ function goForum() {
 .summary-value {
   font-size: 34rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .contact-search-row {
@@ -626,7 +673,7 @@ function goForum() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 28rpx;
   font-weight: 800;
 }
@@ -685,7 +732,7 @@ function goForum() {
 .thread-state {
   flex-shrink: 0;
   font-size: 22rpx;
-  color: #6b7280;
+  color: #6f675d;
 }
 
 .thread-meta {
@@ -700,7 +747,7 @@ function goForum() {
   height: 38rpx;
   padding: 0 10rpx;
   border-radius: 999rpx;
-  background: #f16b4f;
+  background: #c15f3c;
   color: #fff;
   font-size: 22rpx;
   font-weight: 700;
@@ -731,14 +778,53 @@ function goForum() {
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 22rpx;
   font-weight: 700;
 }
 
 .message-badge.read {
   background: rgba(16, 33, 51, 0.08);
-  color: #6b7280;
+  color: #6f675d;
+}
+
+.notification-tabs {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.notification-tab-row {
+  display: inline-flex;
+  gap: 12rpx;
+  padding-bottom: 2rpx;
+}
+
+.notification-tab {
+  min-height: 72rpx;
+  padding: 0 22rpx;
+  margin: 0;
+  border: 1rpx solid t.$color-line;
+  border-radius: t.$radius-sm;
+  background: t.$color-surface;
+  color: t.$color-ink-secondary;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.notification-tab.active {
+  border-color: t.$color-brand;
+  background: t.$color-brand-soft;
+  color: t.$color-brand-deep;
+}
+
+.notification-kind {
+  display: inline-flex;
+  padding: 6rpx 12rpx;
+  border-radius: 10rpx;
+  background: t.$color-input;
+  color: t.$color-ink-secondary;
+  font-size: 20rpx;
+  font-weight: 650;
 }
 
 .mark-all-read-button {
@@ -750,7 +836,7 @@ function goForum() {
   margin: 0;
   border: 0;
   border-radius: 18rpx;
-  background: #f16b4f;
+  background: #c15f3c;
   color: #fff;
   font-size: 24rpx;
   font-weight: 800;
@@ -763,7 +849,7 @@ function goForum() {
 
 .mark-all-read-button[disabled] {
   background: rgba(16, 33, 51, 0.1);
-  color: #8a929c;
+  color: #999084;
 }
 
 .mark-all-read-button::after {

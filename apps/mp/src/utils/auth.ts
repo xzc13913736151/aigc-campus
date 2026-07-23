@@ -127,15 +127,29 @@ function isAdminUser(user: UserSummary | null) {
 
 async function rawRequest<T>(path: string, options: RawRequestOptions = {}) {
   const { method = 'GET', token = null, data } = options
-  const response = await uni.request({
-    url: `${BASE_URL}/${path.replace(/^\//, '')}`,
-    method,
-    data,
-    header: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  })
+  let response
+  try {
+    response = await uni.request({
+      url: `${BASE_URL}/${path.replace(/^\//, '')}`,
+      method,
+      data,
+      header: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    })
+  } catch (error) {
+    const rawMessage =
+      typeof (error as { errMsg?: unknown })?.errMsg === 'string'
+        ? (error as { errMsg: string }).errMsg
+        : error instanceof Error
+          ? error.message
+          : ''
+    if (/request:fail|network|failed to fetch|timeout/i.test(rawMessage)) {
+      throw new Error('服务暂时不可用，请检查网络后重试')
+    }
+    throw new Error(rawMessage || '请求服务失败，请稍后重试')
+  }
 
   const statusCode = response.statusCode ?? 0
   if (statusCode < 200 || statusCode >= 300) {

@@ -10,6 +10,19 @@ export type RequestOptions = {
   timeout?: number
 }
 
+function requestFailureMessage(error: unknown) {
+  const rawMessage =
+    typeof (error as { errMsg?: unknown })?.errMsg === 'string'
+      ? (error as { errMsg: string }).errMsg
+      : error instanceof Error
+        ? error.message
+        : ''
+  if (/request:fail|network|failed to fetch|timeout/i.test(rawMessage)) {
+    return '服务暂时不可用，请检查网络后重试'
+  }
+  return rawMessage || '请求服务失败，请稍后重试'
+}
+
 async function sendRequest(
   url: string,
   method: NonNullable<RequestOptions['method']>,
@@ -31,11 +44,7 @@ async function sendRequest(
       },
     })
   } catch (error) {
-    const message =
-      typeof (error as { errMsg?: unknown })?.errMsg === 'string'
-        ? (error as { errMsg: string }).errMsg
-        : '请求服务失败，请稍后重试'
-    throw new Error(message)
+    throw new Error(requestFailureMessage(error))
   }
 }
 

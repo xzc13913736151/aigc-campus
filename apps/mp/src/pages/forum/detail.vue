@@ -10,8 +10,14 @@
         <view style="height: 18rpx" />
         <text class="section-title">{{ post.title }}</text>
         <view style="height: 12rpx" />
-        <view class="meta-row">
-          <text class="helper">{{ getAuthorName(post.author) }}</text>
+        <view class="meta-row author-meta">
+          <view class="post-author">
+            <UserAvatar :user-id="post.author.id" :name="getAuthorName(post.author)" />
+            <view class="author-copy">
+              <text class="author-name">{{ getAuthorName(post.author) }}</text>
+              <text class="helper">帖子作者</text>
+            </view>
+          </view>
           <text class="helper">{{ formatDate(post.created_at) }}</text>
         </view>
         <view style="height: 16rpx" />
@@ -36,14 +42,11 @@
         </view>
         <view style="height: 18rpx" />
         <view class="stat-row">
-          <text class="helper">点赞 {{ post.like_count }}</text>
           <text class="helper">评论 {{ post.comment_count }}</text>
         </view>
         <view style="height: 20rpx" />
-        <view class="action-row">
-          <button class="btn btn-ghost" :disabled="liking" @tap="handleLike">
-            {{ post.is_liked ? `已点赞 ${post.like_count}` : `点赞 ${post.like_count}` }}
-          </button>
+        <view class="action-row post-actions">
+          <LikeButton :liked="post.is_liked" :count="post.like_count" :busy="liking" @toggle="handleLike" />
           <button v-if="!isAuthor" class="btn btn-ghost" @tap="handleReportPost">举报帖子</button>
           <button v-if="isAuthor" class="btn btn-secondary" @tap="goEdit">编辑帖子</button>
           <button v-if="isAuthor" class="btn btn-ghost" :disabled="deleting" @tap="handleDelete">
@@ -71,7 +74,7 @@
               v-model="commentBody"
               class="comment-input"
               auto-height
-              cursor-color="#f16b4f"
+              cursor-color="#c15f3c"
               placeholder="写下你的想法、建议或补充信息"
             />
           </view>
@@ -85,16 +88,23 @@
 
         <view v-if="post.comments.length" class="comment-list">
           <view v-for="comment in post.comments" :key="comment.id" class="comment-card">
-            <text class="section-title comment-author">{{ getAuthorName(comment.author) }}</text>
+            <view class="comment-author-row">
+              <UserAvatar size="small" :user-id="comment.author.id" :name="getAuthorName(comment.author)" />
+              <text class="section-title comment-author">{{ getAuthorName(comment.author) }}</text>
+            </view>
             <view style="height: 8rpx" />
             <text class="section-desc">{{ comment.body }}</text>
             <view style="height: 8rpx" />
             <text class="helper">{{ formatDate(comment.created_at) }}</text>
             <view v-if="hasToken" style="height: 14rpx" />
             <view v-if="hasToken" class="comment-action-row">
-              <button class="btn btn-ghost btn-small" :disabled="likingCommentId === comment.id" @tap="handleLikeComment(comment.id)">
-                {{ comment.is_liked ? '已赞' : '赞' }}{{ comment.like_count ? ` ${comment.like_count}` : '' }}
-              </button>
+              <LikeButton
+                compact
+                :liked="comment.is_liked"
+                :count="comment.like_count"
+                :busy="likingCommentId === comment.id"
+                @toggle="handleLikeComment(comment.id)"
+              />
               <button class="btn btn-ghost btn-small" @tap="toggleReply(comment.id)">
                 {{ replyingTo === comment.id ? '收起' : '回复' }}
               </button>
@@ -108,7 +118,7 @@
                 v-model="replyBody"
                 class="comment-input reply-input"
                 auto-height
-                cursor-color="#f16b4f"
+                cursor-color="#c15f3c"
                 placeholder="补充你的回复内容"
               />
               <text v-if="commentError" class="error">{{ commentError }}</text>
@@ -119,16 +129,23 @@
 
             <view v-if="comment.replies.length" class="reply-list">
               <view v-for="reply in comment.replies" :key="reply.id" class="reply-card">
-                <text class="section-title reply-author">{{ getAuthorName(reply.author) }}</text>
+                <view class="comment-author-row">
+                  <UserAvatar size="small" :user-id="reply.author.id" :name="getAuthorName(reply.author)" />
+                  <text class="section-title reply-author">{{ getAuthorName(reply.author) }}</text>
+                </view>
                 <view style="height: 8rpx" />
                 <text class="section-desc">{{ reply.body }}</text>
                 <view style="height: 8rpx" />
                 <text class="helper">{{ formatDate(reply.created_at) }}</text>
                 <view v-if="hasToken" style="height: 12rpx" />
                 <view v-if="hasToken" class="comment-action-row">
-                  <button class="btn btn-ghost btn-small" :disabled="likingCommentId === reply.id" @tap="handleLikeComment(reply.id)">
-                    {{ reply.is_liked ? '已赞' : '赞' }}{{ reply.like_count ? ` ${reply.like_count}` : '' }}
-                  </button>
+                  <LikeButton
+                    compact
+                    :liked="reply.is_liked"
+                    :count="reply.like_count"
+                    :busy="likingCommentId === reply.id"
+                    @toggle="handleLikeComment(reply.id)"
+                  />
                   <button v-if="!isMyComment(reply.author.email)" class="btn btn-ghost btn-small" @tap="handleReportComment(reply.id)">
                     举报
                   </button>
@@ -155,6 +172,8 @@ import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import CachedImage from '../../components/CachedImage.vue'
+import LikeButton from '../../components/LikeButton.vue'
+import UserAvatar from '../../components/UserAvatar.vue'
 import type { ForumPost, UserSummary } from '../../types/api'
 import { createForumComment, deleteForumPost, fetchForumPostDetail, toggleForumCommentLike, toggleForumPostLike } from '../../services/forum'
 import { createModerationReport } from '../../services/moderation'
@@ -431,6 +450,8 @@ function previewImages(urls: string[], current: string) {
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
 .meta-row,
 .stat-row,
 .action-row {
@@ -444,6 +465,55 @@ function previewImages(urls: string[], current: string) {
   display: flex;
   gap: 16rpx;
   align-items: center;
+}
+
+.author-meta {
+  align-items: center;
+}
+
+.post-author,
+.comment-author-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.author-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3rpx;
+}
+
+.author-name {
+  max-width: 300rpx;
+  color: t.$color-ink;
+  font-size: 27rpx;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-row {
+  justify-content: flex-end;
+}
+
+.post-actions {
+  align-items: center;
+  padding-top: 18rpx;
+  border-top: 1rpx solid rgba(222, 214, 201, 0.72);
+}
+
+.post-actions .btn {
+  flex: 1;
+  min-width: 132rpx;
+  height: 76rpx;
+  min-height: 76rpx;
+  padding: 0 18rpx;
+  border-radius: 20rpx;
+  font-size: 25rpx;
 }
 
 .btn-small {
@@ -463,9 +533,9 @@ function previewImages(urls: string[], current: string) {
   border: 1rpx solid rgba(16, 33, 51, 0.12);
   font-size: 28rpx;
   line-height: 38rpx;
-  color: #102133;
-  caret-color: #f16b4f;
-  cursor-color: #f16b4f;
+  color: #2f2a24;
+  caret-color: #c15f3c;
+  cursor-color: #c15f3c;
 }
 
 .reply-input {
@@ -475,7 +545,7 @@ function previewImages(urls: string[], current: string) {
 .body-text {
   font-size: 28rpx;
   line-height: 1.8;
-  color: #102133;
+  color: #2f2a24;
   white-space: pre-wrap;
 }
 

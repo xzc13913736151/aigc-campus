@@ -63,12 +63,12 @@
         </button>
         <button v-if="!hasToken" class="btn btn-primary" @tap="goLogin">去登录</button>
         <button v-else-if="!profileComplete" class="btn btn-primary" @tap="goProfile">完善资料</button>
-        <view v-else class="btn btn-primary action-button" @tap="openComposer">
+        <button v-else class="btn btn-primary action-button" @tap="openComposer">
           <text class="action-button-text primary-button-text">发起组队</text>
-        </view>
-        <view class="btn btn-ghost action-button" @tap="focusMyPosts">
+        </button>
+        <button class="btn btn-ghost action-button" @tap="focusMyPosts">
           <text class="action-button-text ghost-button-text">看我的招募</text>
-        </view>
+        </button>
       </view>
 
       <view v-if="pageError" style="height: 14rpx" />
@@ -509,19 +509,19 @@ function startChatToAuthor(post: TeamPost) {
   padding: 12rpx 20rpx;
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.84);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
 }
 
 .status-chip.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .status-chip.complete {
   background: rgba(77, 166, 106, 0.18);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .stats-grid {
@@ -536,7 +536,7 @@ function startChatToAuthor(post: TeamPost) {
   display: block;
   font-size: 44rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .section-head,
@@ -570,7 +570,7 @@ function startChatToAuthor(post: TeamPost) {
   border: 0;
   border-radius: 999rpx;
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 24rpx;
   font-weight: 700;
   line-height: 1;
@@ -615,7 +615,7 @@ function startChatToAuthor(post: TeamPost) {
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
   font-size: 22rpx;
   font-weight: 700;
 }
@@ -625,7 +625,7 @@ function startChatToAuthor(post: TeamPost) {
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.08);
   font-size: 22rpx;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .apply-box {
@@ -640,16 +640,16 @@ function startChatToAuthor(post: TeamPost) {
 
 .tag.accepted {
   background: rgba(77, 166, 106, 0.18);
-  color: #2e7d49;
+  color: #557a5d;
 }
 
 .tag.rejected {
   background: rgba(220, 38, 38, 0.12);
-  color: #dc2626;
+  color: #b75347;
 }
 
 .tag.pending {
   background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  color: #c15f3c;
 }
 </style>

@@ -141,7 +141,7 @@ onShow(() => {
 .stat-value {
   font-size: 42rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .section-head,

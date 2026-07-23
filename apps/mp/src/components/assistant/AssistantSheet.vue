@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <view v-if="visible" class="assistant-root">
     <view class="assistant-mask" @tap="emit('close')" />
 
@@ -11,18 +11,20 @@
 
       <view class="assistant-header">
         <view class="assistant-header-copy">
-          <text class="assistant-kicker">CampusClaw AI</text>
+          <text class="assistant-kicker">CampusClaw 协作助手</text>
           <view style="height: 8rpx" />
-          <text class="assistant-title">AI 助手</text>
+          <text class="assistant-title">一起把事情理清楚</text>
           <view style="height: 8rpx" />
-          <text class="assistant-subtitle">直接输入你想问的内容，AI 会根据当前页面给出建议。</text>
+          <text class="assistant-subtitle">我会保留当前页面上下文，先给建议，涉及发布或发送时再请你确认。</text>
         </view>
-        <button class="assistant-close" @tap="emit('close')">收起</button>
+        <button class="assistant-close" @tap="emit('close')">
+          <text class="button-label">收起</text>
+        </button>
       </view>
 
       <view class="assistant-meta">
         <view class="meta-pill accent">
-          <text>CampusClaw 对话助手</text>
+          <text>{{ contextLabel }}</text>
         </view>
         <view class="meta-pill">
           <text>{{ messages.length ? `已沉淀 ${messageTurns} 轮对话` : '这是一个新的对话' }}</text>
@@ -47,7 +49,7 @@
             </view>
           </view>
 
-          <view v-else-if="messages.length || pendingUserBody || sending || actions.length" class="assistant-message-list">
+          <view v-else-if="messages.length || visiblePendingUserBody || sending || actions.length" class="assistant-message-list">
             <view
               v-for="message in messages"
               :id="`assistant-message-${message.id}`"
@@ -60,16 +62,17 @@
                 <text class="assistant-time">{{ formatDate(message.created_at) }}</text>
               </view>
               <view style="height: 8rpx" />
-              <text class="assistant-copy">{{ message.body }}</text>
+              <text v-if="message.role === 'user'" class="assistant-copy">{{ message.body }}</text>
+              <AssistantMarkdown v-else :content="message.body" />
             </view>
 
-            <view v-if="pendingUserBody" id="assistant-pending-user" class="assistant-message mine">
+            <view v-if="visiblePendingUserBody" id="assistant-pending-user" class="assistant-message mine">
               <view class="assistant-message-head">
                 <text class="assistant-role">我</text>
                 <text class="assistant-time">刚刚</text>
               </view>
               <view style="height: 8rpx" />
-              <text class="assistant-copy">{{ pendingUserBody }}</text>
+              <text class="assistant-copy">{{ visiblePendingUserBody }}</text>
             </view>
 
             <view v-if="sending" id="assistant-thinking" class="assistant-message">
@@ -107,7 +110,9 @@
         </scroll-view>
 
         <view class="assistant-actions">
-          <button class="restart-link" :disabled="sending || bootstrapping" @tap="handleRestartSession">重新开始</button>
+          <button class="restart-button" :disabled="sending || bootstrapping" @tap="handleRestartSession">
+            <text class="button-label">开启新对话</text>
+          </button>
         </view>
 
         <view class="assistant-composer">
@@ -117,7 +122,7 @@
               class="assistant-textarea"
               auto-height
               confirm-type="send"
-              cursor-color="#f16b4f"
+              cursor-color="#c15f3c"
               :show-confirm-bar="false"
               maxlength="500"
               placeholder="问点什么..."
@@ -131,6 +136,31 @@
         </view>
       </view>
     </view>
+
+    <view v-if="confirmationAction" class="action-confirm-layer">
+      <view class="action-confirm-mask" @tap="cancelExecuteAction" />
+      <view class="action-confirm-card" @tap.stop>
+        <text class="action-confirm-kicker">需要你的确认</text>
+        <text class="action-confirm-title">确认执行这项操作？</text>
+        <text class="action-confirm-desc">CampusClaw 助手只会在你确认后执行，发布内容仍由你负责最终决定。</text>
+
+        <view class="action-confirm-summary">
+          <text class="action-confirm-summary-label">即将执行</text>
+          <text class="action-confirm-summary-title">{{ confirmationAction.title }}</text>
+          <text v-if="confirmationPreview" class="action-confirm-summary-desc">{{ confirmationPreview }}</text>
+        </view>
+        <text v-if="confirmationError" class="action-confirm-error">{{ confirmationError }}</text>
+
+        <view class="action-confirm-buttons">
+          <button class="action-confirm-button secondary" :disabled="Boolean(actionBusyId)" @tap="cancelExecuteAction">
+            <text class="button-label">返回修改</text>
+          </button>
+          <button class="action-confirm-button primary" :disabled="Boolean(actionBusyId)" @tap="confirmExecuteAction">
+            <text class="button-label">{{ actionBusyId ? '执行中…' : '确认执行' }}</text>
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -138,6 +168,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 
 import AssistantActionCard from './AssistantActionCard.vue'
+import AssistantMarkdown from './AssistantMarkdown.vue'
 import type { AssistantActionProposal, AssistantMessage, AssistantSession } from '../../types/api'
 import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
 import { sendDatingSignal } from '../../services/dating'
@@ -172,9 +203,12 @@ const draft = ref('')
 const bootstrapping = ref(false)
 const sending = ref(false)
 const pendingUserBody = ref('')
+const pendingBaseMessageCount = ref(0)
 const errorMessage = ref('')
 const actions = ref<AssistantActionProposal[]>([])
 const actionBusyId = ref('')
+const confirmationAction = ref<AssistantActionProposal | null>(null)
+const confirmationError = ref('')
 const scrollTop = ref(0)
 const scrollBottomSeed = ref(100000)
 const sessionCache = ref<Record<string, SessionCacheEntry>>({})
@@ -191,6 +225,26 @@ const sessionKey = computed(
 )
 
 const messageTurns = computed(() => Math.max(1, Math.ceil(messages.value.length / 2)))
+const visiblePendingUserBody = computed(() => {
+  if (!pendingUserBody.value.trim() || messages.value.length > pendingBaseMessageCount.value) {
+    return ''
+  }
+  return pendingUserBody.value
+})
+const confirmationPreview = computed(() => {
+  const preview = confirmationAction.value?.preview || {}
+  return String(preview.body || preview.title || preview.action || '')
+})
+const contextLabel = computed(() => {
+  const labels: Record<AssistantSession['page_type'], string> = {
+    forum: '正在协助：校园论坛',
+    publish: '正在协助：校园匹配',
+    messages: '正在协助：消息沟通',
+    me: '正在协助：个人资料',
+    general: '通用校园协作',
+  }
+  return labels[props.pageType] || labels.general
+})
 
 function assistantUiDebug(event: string, payload: Record<string, unknown> = {}) {
   if (!ASSISTANT_UI_DEBUG) {
@@ -253,7 +307,12 @@ watch(
 watch(
   () => props.visible,
   async (value) => {
-    if (!value || !hasToken.value) {
+    if (!value) {
+      confirmationAction.value = null
+      confirmationError.value = ''
+      return
+    }
+    if (!hasToken.value) {
       return
     }
     restoreCachedSession()
@@ -275,7 +334,7 @@ watch(
 )
 
 watch(
-  [() => messages.value.length, () => pendingUserBody.value, () => sending.value, () => actions.value.length],
+  [() => messages.value.length, () => visiblePendingUserBody.value, () => sending.value, () => actions.value.length],
   () => {
     if (props.visible) {
       void scrollToBottom()
@@ -493,6 +552,7 @@ async function handleSend() {
   }
 
   sending.value = true
+  pendingBaseMessageCount.value = messages.value.length
   pendingUserBody.value = body
   draft.value = ''
   const sentAt = Date.now()
@@ -506,6 +566,7 @@ async function handleSend() {
     clearLateResponseRecovery()
     lastLocalMutationAt.value = Date.now()
     session.value = response.session
+    pendingUserBody.value = ''
     messages.value = mergeMessages(messages.value, [response.user_message, response.assistant_message])
     actions.value = response.actions ?? []
     hasTurnResponse = hasResponseForTurn(sentAt)
@@ -560,6 +621,7 @@ async function handleRestartSession() {
   messages.value = []
   actions.value = []
   pendingUserBody.value = ''
+  pendingBaseMessageCount.value = 0
   sending.value = false
   errorMessage.value = ''
 
@@ -645,30 +707,40 @@ async function handleRecommendationAction(
 }
 
 function handleExecuteAction(action: AssistantActionProposal) {
-  uni.showModal({
-    title: '确认执行 AI 动作',
-    content: '将执行：' + action.title + '。请确认内容无误后继续。',
-    confirmText: '确认执行',
-    success: async (result) => {
-      if (!result.confirm) {
-        return
-      }
-      actionBusyId.value = action.id
-      try {
-        const response = await executeAssistantAction(action.id)
-        actions.value = actions.value.map((item) => (item.id === action.id ? response.action : item))
-        persistCurrentSession()
-        uni.showToast({ title: response.result.message || '执行成功', icon: 'success' })
-        if (response.result.target_page) {
-          openTargetPage(String(response.result.target_page))
-        }
-      } catch (error) {
-        uni.showToast({ title: error instanceof Error ? error.message : '执行失败', icon: 'none' })
-      } finally {
-        actionBusyId.value = ''
-      }
-    },
-  })
+  confirmationError.value = ''
+  confirmationAction.value = action
+}
+
+function cancelExecuteAction() {
+  if (actionBusyId.value) {
+    return
+  }
+  confirmationAction.value = null
+  confirmationError.value = ''
+}
+
+async function confirmExecuteAction() {
+  const action = confirmationAction.value
+  if (!action || actionBusyId.value) {
+    return
+  }
+
+  actionBusyId.value = action.id
+  confirmationError.value = ''
+  try {
+    const response = await executeAssistantAction(action.id)
+    actions.value = actions.value.map((item) => (item.id === action.id ? response.action : item))
+    persistCurrentSession()
+    confirmationAction.value = null
+    uni.showToast({ title: response.result.message || '执行成功', icon: 'success' })
+    if (response.result.target_page) {
+      openTargetPage(String(response.result.target_page))
+    }
+  } catch (error) {
+    confirmationError.value = error instanceof Error ? error.message : '执行失败，请稍后再试'
+  } finally {
+    actionBusyId.value = ''
+  }
 }
 
 async function scrollToBottom() {
@@ -694,16 +766,128 @@ function goLogin() {
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
 .assistant-root {
   position: fixed;
   inset: 0;
   z-index: 10001;
 }
 
+.action-confirm-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx 32rpx calc(40rpx + env(safe-area-inset-bottom));
+}
+
+.action-confirm-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(47, 42, 36, 0.42);
+}
+
+.action-confirm-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 620rpx;
+  padding: 36rpx;
+  border: 1rpx solid t.$color-line;
+  border-radius: t.$radius-lg;
+  background: t.$color-card;
+  box-shadow: 0 30rpx 90rpx rgba(47, 42, 36, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.action-confirm-kicker {
+  color: t.$color-ai;
+  font-size: 22rpx;
+  font-weight: 650;
+  letter-spacing: 1rpx;
+}
+
+.action-confirm-title {
+  color: t.$color-ink;
+  font-size: 36rpx;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.action-confirm-desc,
+.action-confirm-summary-desc {
+  color: t.$color-ink-secondary;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+
+.action-confirm-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+  padding: 22rpx;
+  border-left: 5rpx solid t.$color-ai;
+  border-radius: 4rpx t.$radius-sm t.$radius-sm 4rpx;
+  background: t.$color-input;
+}
+
+.action-confirm-summary-label {
+  color: t.$color-ink-muted;
+  font-size: 21rpx;
+}
+
+.action-confirm-summary-title {
+  color: t.$color-ink;
+  font-size: 28rpx;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.action-confirm-error {
+  color: t.$color-danger;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.action-confirm-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  margin-top: 8rpx;
+}
+
+.action-confirm-button {
+  width: 100%;
+  height: 88rpx;
+  min-height: 88rpx;
+  padding: 0 20rpx;
+  margin: 0;
+  border-radius: t.$radius-sm;
+  font-size: 26rpx;
+  font-weight: 650;
+}
+
+.action-confirm-button.secondary {
+  border: 1rpx solid t.$color-line;
+  background: t.$color-surface;
+  color: t.$color-ink;
+}
+
+.action-confirm-button.primary {
+  border: 1rpx solid t.$color-brand;
+  background: t.$color-brand;
+  color: t.$color-inverse;
+}
+
 .assistant-mask {
   position: absolute;
   inset: 0;
-  background: transparent;
+  background: rgba(47, 42, 36, 0.22);
 }
 
 .assistant-sheet {
@@ -714,14 +898,11 @@ function goLogin() {
   height: 64vh;
   min-height: 42vh;
   max-height: 88vh;
-  padding: 20rpx 24rpx calc(env(safe-area-inset-bottom) + 92rpx);
-  border-radius: 36rpx 36rpx 0 0;
-  background:
-    radial-gradient(circle at top right, rgba(241, 107, 79, 0.14), transparent 28%),
-    radial-gradient(circle at top left, rgba(255, 196, 120, 0.14), transparent 26%),
-    rgba(255, 250, 245, 0.985);
-  border-top: 1rpx solid rgba(16, 33, 51, 0.08);
-  box-shadow: 0 -28rpx 72rpx rgba(16, 33, 51, 0.16);
+  padding: 18rpx 24rpx calc(env(safe-area-inset-bottom) + 88rpx);
+  border-radius: 32rpx 32rpx 0 0;
+  background: t.$color-surface;
+  border-top: 1rpx solid t.$color-line;
+  box-shadow: t.$shadow-float;
   display: flex;
   flex-direction: column;
   gap: 18rpx;
@@ -731,7 +912,7 @@ function goLogin() {
   width: 92rpx;
   height: 8rpx;
   border-radius: 999rpx;
-  background: rgba(16, 33, 51, 0.16);
+  background: t.$color-line;
   align-self: center;
   flex-shrink: 0;
 }
@@ -751,41 +932,45 @@ function goLogin() {
   display: inline-flex;
   align-items: center;
   padding: 8rpx 16rpx;
-  border-radius: 999rpx;
-  background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  border-radius: t.$radius-sm;
+  background: t.$color-input;
+  color: t.$color-ai;
   font-size: 20rpx;
-  font-weight: 800;
-  letter-spacing: 3rpx;
+  font-weight: 650;
+  letter-spacing: 1rpx;
 }
 
 .assistant-title {
   font-size: 36rpx;
   font-weight: 700;
-  color: #102133;
+  color: t.$color-ink;
 }
 
 .assistant-subtitle {
   font-size: 24rpx;
   line-height: 1.7;
-  color: #6b7280;
+  color: t.$color-ink-secondary;
 }
 
 .assistant-close {
   flex-shrink: 0;
   min-width: 104rpx;
-  height: 56rpx;
-  min-height: 56rpx;
+  height: 80rpx;
+  min-height: 80rpx;
   padding: 0 24rpx;
   margin: 0;
   border: 0;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.82);
-  color: #102133;
+  border-radius: t.$radius-sm;
+  border: 1rpx solid t.$color-line;
+  background: t.$color-card;
+  color: t.$color-ink;
   font-size: 24rpx;
   font-weight: 700;
-  line-height: 1;
+  line-height: 80rpx;
   text-align: center;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .assistant-close::after {
@@ -800,16 +985,16 @@ function goLogin() {
 
 .meta-pill {
   padding: 10rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
+  border-radius: t.$radius-sm;
+  background: t.$color-card;
+  border: 1rpx solid t.$color-line;
   font-size: 22rpx;
-  color: #44515f;
+  color: t.$color-ink-secondary;
 }
 
 .meta-pill.accent {
-  background: rgba(241, 107, 79, 0.12);
-  color: #f16b4f;
+  background: t.$color-input;
+  color: t.$color-ai;
 }
 
 .assistant-body {
@@ -847,15 +1032,23 @@ function goLogin() {
 .loading-bubble {
   max-width: 92%;
   padding: 20rpx 22rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
-  box-shadow: 0 10rpx 28rpx rgba(16, 33, 51, 0.04);
+  border-radius: t.$radius-md;
+  background: t.$color-card;
+  border: 1rpx solid t.$color-line;
 }
 
 .assistant-message.mine {
   margin-left: auto;
-  background: rgba(241, 107, 79, 0.12);
+  background: t.$color-brand-soft;
+  border-color: transparent;
+}
+
+.assistant-message:not(.mine) {
+  max-width: 100%;
+  padding-left: 4rpx;
+  padding-right: 4rpx;
+  border-color: transparent;
+  background: transparent;
 }
 
 .assistant-message-head {
@@ -868,48 +1061,61 @@ function goLogin() {
 .assistant-role {
   font-size: 22rpx;
   font-weight: 700;
-  color: #f16b4f;
+  color: t.$color-ai;
 }
 
 .assistant-time {
   font-size: 20rpx;
-  color: #8a929c;
+  color: t.$color-ink-muted;
 }
 
 .assistant-copy {
   font-size: 26rpx;
   line-height: 1.75;
-  color: #102133;
+  color: t.$color-ink;
   white-space: pre-wrap;
 }
 
 .assistant-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
-.restart-link {
-  height: 42rpx;
-  min-height: 42rpx;
-  padding: 0 6rpx;
+.restart-button {
+  height: 72rpx;
+  min-height: 72rpx;
+  padding: 0 24rpx;
   margin: 0;
-  border: 0;
-  background: transparent;
-  color: #8a929c;
-  font-size: 22rpx;
-  line-height: 1;
+  border: 1rpx solid t.$color-brand;
+  border-radius: t.$radius-sm;
+  background: t.$color-card;
+  color: t.$color-brand-deep;
+  font-size: 24rpx;
+  font-weight: 650;
+  line-height: 72rpx;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.restart-link::after {
+.restart-button::after {
   border: 0;
+}
+
+.button-label {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .assistant-composer {
   flex-shrink: 0;
   padding: 10rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
+  border-radius: t.$radius-md;
+  background: t.$color-input;
+  border: 1rpx solid t.$color-line;
 }
 
 .composer-row {
@@ -923,13 +1129,13 @@ function goLogin() {
   min-height: 44rpx;
   max-height: 168rpx;
   padding: 14rpx 18rpx;
-  border-radius: 28rpx;
-  background: rgba(255, 250, 245, 0.98);
-  color: #102133;
+  border-radius: t.$radius-sm;
+  background: transparent;
+  color: t.$color-ink;
   font-size: 27rpx;
   line-height: 38rpx;
-  caret-color: #f16b4f;
-  cursor-color: #f16b4f;
+  caret-color: t.$color-brand;
+  cursor-color: t.$color-brand;
   overflow-y: auto;
 }
 
@@ -941,9 +1147,9 @@ function goLogin() {
   padding: 0;
   margin: 0;
   border: 0;
-  border-radius: 999rpx;
-  background: #f16b4f;
-  color: #fff;
+  border-radius: t.$radius-sm;
+  background: t.$color-brand;
+  color: t.$color-inverse;
   font-size: 25rpx;
   font-weight: 800;
   line-height: 1;
@@ -953,8 +1159,8 @@ function goLogin() {
 }
 
 .send-button.disabled {
-  background: rgba(16, 33, 51, 0.12);
-  color: #8a929c;
+  background: t.$color-line;
+  color: t.$color-ink-muted;
 }
 
 .send-button::after {
@@ -975,8 +1181,8 @@ function goLogin() {
 
 .card-like {
   border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1rpx solid rgba(16, 33, 51, 0.08);
+  background: t.$color-card;
+  border: 1rpx solid t.$color-line;
 }
 
 .inline-empty {
@@ -993,7 +1199,7 @@ function goLogin() {
   width: 12rpx;
   height: 12rpx;
   border-radius: 50%;
-  background: #f16b4f;
+  background: t.$color-ai;
   opacity: 0.6;
 }
 

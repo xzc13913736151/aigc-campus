@@ -28,7 +28,7 @@
         <button class="btn btn-secondary forum-toolbar-btn" :disabled="loadingList" @tap="refreshAll">
           {{ loadingList ? "搜索中..." : "搜索帖子" }}
         </button>
-        <button v-if="hasToken && myPosts.length" class="btn btn-ghost forum-toolbar-btn" @tap="toggleMineOnly">
+        <button v-if="hasToken && (myPosts.length || mineOnly)" class="btn btn-ghost forum-toolbar-btn" @tap="toggleMineOnly">
           {{ mineOnly ? "查看全部帖子" : "只看我的帖子" }}
         </button>
         <button class="create-post-btn forum-toolbar-btn" @tap="goCreate">
@@ -52,15 +52,18 @@
 
       <view v-if="pageError" style="height: 14rpx" />
       <text v-if="pageError" class="error">{{ pageError }}</text>
+      <button v-if="pageError" class="btn btn-secondary forum-toolbar-btn" :disabled="loadingList" @tap="refreshAll">
+        {{ loadingList ? "重试中..." : "重新加载" }}
+      </button>
     </view>
 
     <view class="section">
       <view class="result-head">
         <view>
-          <text class="section-title">{{ query.trim() ? "帖子搜索结果" : "最新帖子" }}</text>
+          <text class="section-title">{{ mineOnly ? "我的帖子" : query.trim() ? "帖子搜索结果" : "最新帖子" }}</text>
           <view style="height: 8rpx" />
           <text class="section-desc">
-            {{ query.trim() ? `已为你找到 ${displayPosts.length} 条相关帖子` : `当前共有 ${displayPosts.length} 条帖子` }}
+            {{ mineOnly ? `共发布 ${displayPosts.length} 条帖子` : query.trim() ? `已为你找到 ${displayPosts.length} 条相关帖子` : `当前共有 ${displayPosts.length} 条帖子` }}
           </text>
         </view>
         <text v-if="loadingList" class="helper">加载中...</text>
@@ -81,7 +84,10 @@
         <view style="height: 16rpx" />
 
         <view class="meta-row">
-          <text class="helper">{{ getAuthorName(post) }}</text>
+          <view class="post-author">
+            <UserAvatar size="small" :user-id="post.author.id" :name="getAuthorName(post)" />
+            <text class="helper author-name">{{ getAuthorName(post) }}</text>
+          </view>
           <text class="helper">{{ formatDate(post.created_at) }}</text>
         </view>
 
@@ -115,41 +121,35 @@
         <view style="height: 18rpx" />
 
         <view class="stat-row">
-          <text class="helper">点赞 {{ post.like_count }}</text>
           <text class="helper">评论 {{ post.comment_count }}</text>
         </view>
 
         <view style="height: 18rpx" />
 
-        <view class="action-row">
-          <button class="btn btn-ghost" @tap.stop="openDetail(post.id)">
+        <view class="action-row post-actions">
+          <button class="btn btn-secondary post-action-button detail-action" @tap.stop="openDetail(post.id)">
             查看详情
           </button>
           <button
             v-if="!isMine(post)"
-            class="btn btn-secondary"
+            class="btn btn-ghost post-action-button"
             @tap.stop="contactAuthor(post)"
           >
             联系TA
           </button>
           <button
-            class="btn btn-ghost"
-            :disabled="likingPostId === post.id"
-            @tap.stop="handleLike(post.id)"
-          >
-            {{
-              post.is_liked
-                ? `已点赞 ${post.like_count}`
-                : `点赞 ${post.like_count}`
-            }}
-          </button>
-          <button
             v-if="isMine(post)"
-            class="btn btn-secondary"
+            class="btn btn-ghost post-action-button"
             @tap.stop="goEdit(post.id)"
           >
             编辑
           </button>
+          <LikeButton
+            :liked="post.is_liked"
+            :count="post.like_count"
+            :busy="likingPostId === post.id"
+            @toggle="handleLike(post.id)"
+          />
         </view>
       </view>
     </view>
@@ -170,10 +170,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { onPullDownRefresh, onShow } from "@dcloudio/uni-app";
+import { onLoad, onPullDownRefresh, onShow } from "@dcloudio/uni-app";
 
 import BottomTabBar from "../../components/BottomTabBar.vue";
 import CachedImage from "../../components/CachedImage.vue";
+import LikeButton from "../../components/LikeButton.vue";
+import UserAvatar from "../../components/UserAvatar.vue";
 import type { ForumPost } from "../../types/api";
 import {
   fetchForumPosts,
@@ -209,6 +211,10 @@ const likingPostId = ref("");
 const pageError = ref("");
 const hasToken = ref(isAuthenticated.value);
 const mineOnly = ref(false);
+
+onLoad((options) => {
+  mineOnly.value = options?.mine === "1";
+});
 
 const displayPosts = computed(() => {
   let source = mineOnly.value ? myPosts.value : posts.value;
@@ -386,13 +392,13 @@ function contactAuthor(post: ForumPost) {
 .entry-title {
   font-size: 34rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .entry-desc {
   font-size: 24rpx;
   line-height: 1.7;
-  color: #6b7280;
+  color: #6f675d;
 }
 
 .toolbar-head {
@@ -430,7 +436,7 @@ function contactAuthor(post: ForumPost) {
 
 .create-post-btn {
   border: 0;
-  background: #f16b4f;
+  background: #c15f3c;
 }
 
 .create-post-label {
@@ -457,7 +463,7 @@ function contactAuthor(post: ForumPost) {
   border-radius: 999rpx;
   background: rgba(255, 255, 255, 0.86);
   border: 1rpx solid rgba(16, 33, 51, 0.1);
-  color: #102133;
+  color: #2f2a24;
   font-size: 24rpx;
   font-weight: 600;
   line-height: 1;
@@ -470,7 +476,7 @@ function contactAuthor(post: ForumPost) {
 
 .category-chip.active {
   background: rgba(241, 107, 79, 0.14);
-  color: #f16b4f;
+  color: #c15f3c;
   border-color: rgba(241, 107, 79, 0.22);
 }
 
@@ -523,6 +529,49 @@ function contactAuthor(post: ForumPost) {
   justify-content: space-between;
   gap: 16rpx;
   flex-wrap: wrap;
+}
+
+.post-author {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.author-name {
+  max-width: 260rpx;
+  color: #6f675d;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-row {
+  justify-content: flex-end;
+}
+
+.post-actions {
+  align-items: center;
+  flex-wrap: nowrap;
+  padding-top: 18rpx;
+  border-top: 1rpx solid rgba(222, 214, 201, 0.72);
+}
+
+.post-action-button {
+  flex: 1;
+  min-width: 0;
+  height: 76rpx;
+  min-height: 76rpx;
+  padding: 0 18rpx;
+  border-radius: 20rpx;
+  font-size: 25rpx;
+  white-space: nowrap;
+}
+
+.detail-action {
+  border-color: rgba(193, 95, 60, 0.2);
+  background: rgba(243, 216, 202, 0.44);
+  color: #9f472e;
 }
 
 .image-strip {

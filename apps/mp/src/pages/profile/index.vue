@@ -405,7 +405,7 @@ function applyAssistantDraft() {
 .stat-value {
   font-size: 42rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .profile-head {
@@ -441,7 +441,7 @@ function applyAssistantDraft() {
   justify-content: center;
   font-size: 44rpx;
   font-weight: 700;
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .action-row {
@@ -462,7 +462,7 @@ function applyAssistantDraft() {
 .required {
   font-size: 22rpx;
   font-weight: 700;
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .progress-bar {
@@ -476,7 +476,7 @@ function applyAssistantDraft() {
 .progress-bar-fill {
   height: 100%;
   border-radius: 999rpx;
-  background: linear-gradient(90deg, #f16b4f 0%, #ff9c6a 100%);
+  background: linear-gradient(90deg, #c15f3c 0%, #ff9c6a 100%);
 }
 
 .hint-card {
@@ -492,6 +492,6 @@ function applyAssistantDraft() {
 .hint-title {
   font-size: 26rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 </style>

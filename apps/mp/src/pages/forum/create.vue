@@ -21,36 +21,43 @@
         <button class="btn btn-primary" @tap="goLogin">去登录</button>
       </view>
 
-      <view v-else class="form">
+      <view v-else class="form" :class="{ 'ai-filled': aiFilled }">
+        <view v-if="aiFilled" class="ai-fill-note">
+          <text>AI 已生成草稿</text>
+          <text class="helper">请逐项检查，确认后再发布。</text>
+        </view>
         <view class="field">
-          <text class="label">帖子标题</text>
+          <text class="label">帖子标题 · 必填</text>
           <input v-model="form.title" class="input" type="text" placeholder="用一句话说清你想讨论什么" />
+          <text v-if="fieldError === 'title'" class="error">{{ errorMessage }}</text>
         </view>
 
         <view class="field">
-          <text class="label">帖子分类</text>
+          <text class="label">帖子分类 · 必填</text>
           <picker :range="categories" @change="handleCategoryChange">
             <view class="input">{{ form.category || '请选择帖子分类' }}</view>
           </picker>
+          <text v-if="fieldError === 'category'" class="error">{{ errorMessage }}</text>
         </view>
 
         <view class="field">
-          <text class="label">正文内容</text>
+          <text class="label">正文内容 · 必填</text>
           <textarea
             v-model="form.body"
             class="textarea"
             placeholder="写清背景、问题、目标，或者你希望大家如何参与"
           />
+          <text v-if="fieldError === 'body'" class="error">{{ errorMessage }}</text>
         </view>
 
         <view class="field">
-          <text class="label">标签</text>
+          <text class="label">标签 · 选填</text>
           <input v-model="form.tagsText" class="input" type="text" placeholder="例如：AI, 校园活动, 组队, 实习" />
           <text class="helper">多个标签请用英文逗号分隔，方便后续搜索和筛选。</text>
         </view>
 
         <view class="field">
-          <text class="label">帖子图片</text>
+          <text class="label">帖子图片 · 选填</text>
           <text class="helper">
             最多一次选择 6 张图片。新帖子会在发布成功后自动上传，编辑帖子时可继续追加图片。
           </text>
@@ -91,18 +98,27 @@
           </view>
         </view>
 
-        <text v-if="errorMessage" class="error">{{ normalizedErrorMessage }}</text>
+        <text v-if="errorMessage && !fieldError" class="error">{{ normalizedErrorMessage }}</text>
+
+        <view v-if="showPreview" class="preview-card">
+          <text class="eyebrow">发布前预览</text>
+          <text class="section-title">{{ form.title }}</text>
+          <text class="helper">{{ form.category }} · {{ splitTags(form.tagsText).join(' / ') || '无标签' }}</text>
+          <text class="section-desc preview-body">{{ form.body }}</text>
+          <text v-if="pendingImagePaths.length" class="helper">另有 {{ pendingImagePaths.length }} 张待上传图片</text>
+        </view>
 
         <view class="editor-actions">
           <view
             class="editor-button primary-action"
             :class="{ disabled: submitting || loading }"
-            @tap="handleSubmit"
+            @tap="showPreview ? confirmSubmit() : handleSubmit()"
           >
             <text v-if="submitting && isEditing" class="editor-button-text primary-text">保存中...</text>
             <text v-else-if="submitting" class="editor-button-text primary-text">发布中...</text>
-            <text v-else-if="isEditing" class="editor-button-text primary-text">保存修改</text>
-            <text v-else class="editor-button-text primary-text">发布帖子</text>
+            <text v-else-if="showPreview" class="editor-button-text primary-text">确认并{{ isEditing ? '保存' : '发布' }}</text>
+            <text v-else-if="isEditing" class="editor-button-text primary-text">预览修改</text>
+            <text v-else class="editor-button-text primary-text">预览帖子</text>
           </view>
           <view class="editor-button secondary-action" @tap="backToForum">
             <text class="editor-button-text secondary-text">返回论坛</text>
@@ -122,7 +138,7 @@ import { createForumPost, fetchForumPostDetail, updateForumPost, uploadForumPost
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { chooseImagePaths } from '../../utils/image'
 import { getMediaUrl, getMediaUrls } from '../../utils/media'
-import { navigateTo } from '../../utils/navigation'
+import { navigateTo, switchTab } from '../../utils/navigation'
 import { showToast } from '../../utils/ui'
 
 const ACCESS_TOKEN_KEY = 'pairup.access-token'
@@ -136,6 +152,9 @@ const errorMessage = ref('')
 const postId = ref('')
 const imageUrls = ref<string[]>([])
 const pendingImagePaths = ref<string[]>([])
+const fieldError = ref('')
+const showPreview = ref(false)
+const aiFilled = ref(false)
 
 const form = reactive({
   title: '',
@@ -184,6 +203,10 @@ function applyAssistantDraft() {
     form.tagsText = payload.tags
   }
   showToast('AI 已填入帖子草稿', 'success')
+  aiFilled.value = true
+  setTimeout(() => {
+    aiFilled.value = false
+  }, 2400)
 }
 
 function resetTransientState() {
@@ -291,28 +314,40 @@ function handleSubmit() {
   }
 
   errorMessage.value = ''
+  fieldError.value = ''
 
   if (form.title.trim().length < 4) {
+    fieldError.value = 'title'
     errorMessage.value = '标题至少需要 4 个字'
     return
   }
 
   if (!form.category.trim()) {
+    fieldError.value = 'category'
     errorMessage.value = '请选择帖子分类'
     return
   }
 
   if (form.body.trim().length < 10) {
+    fieldError.value = 'body'
     errorMessage.value = '正文至少需要 10 个字'
     return
   }
 
+  showPreview.value = true
+}
+
+function confirmSubmit() {
   const targetUrl = postId.value ? `/pages/forum/create?id=${postId.value}` : '/pages/forum/create'
   if (!ensureLocalAuthenticated(targetUrl)) {
     return
   }
 
   void submitPostRequest()
+}
+
+function splitTags(value: string) {
+  return value.split(',').map((tag) => tag.trim()).filter(Boolean)
 }
 
 async function submitPostRequest() {
@@ -352,9 +387,8 @@ function buildPostPayload() {
     body: form.body.trim(),
     category: form.category.trim(),
     tags: form.tagsText
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean),
+      ? splitTags(form.tagsText)
+      : [],
   }
 }
 
@@ -378,7 +412,7 @@ function goLogin() {
 }
 
 function backToForum() {
-  uni.switchTab({ url: '/pages/forum/index' })
+  switchTab('/pages/forum/index')
 }
 
 function isLoggedIn() {
@@ -428,6 +462,43 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
 </script>
 
 <style scoped lang="scss">
+@use '../../styles/tokens' as t;
+
+.ai-fill-note,
+.preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  padding: 24rpx;
+  border: 1rpx solid t.$color-line;
+  border-radius: t.$radius-md;
+  background: t.$color-surface;
+}
+
+.ai-fill-note {
+  color: t.$color-ai;
+}
+
+.preview-body {
+  white-space: pre-wrap;
+}
+
+.ai-filled .input,
+.ai-filled .textarea {
+  animation: ai-field-highlight 2.4s ease;
+}
+
+@keyframes ai-field-highlight {
+  0%,
+  35% {
+    border-color: t.$color-brand;
+    background: t.$color-brand-soft;
+  }
+  100% {
+    border-color: t.$color-line;
+    background: t.$color-input;
+  }
+}
 .image-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -465,7 +536,7 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
   padding: 0 18rpx;
   border-radius: 999rpx;
   background: rgba(16, 33, 51, 0.08);
-  color: #102133;
+  color: #2f2a24;
   font-size: 22rpx;
 }
 
@@ -522,13 +593,13 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
   width: 100%;
   background: rgba(255, 255, 255, 0.86);
   border: 1rpx solid rgba(16, 33, 51, 0.12);
-  color: #102133;
+  color: #2f2a24;
 }
 
 .primary-action {
   flex: 1;
   min-width: 0;
-  background: #f16b4f;
+  background: #c15f3c;
 }
 
 .secondary-action {
@@ -542,6 +613,6 @@ function normalizeErrorMessage(message: string, fallback = '操作失败，请�
 }
 
 .secondary-text {
-  color: #102133;
+  color: #2f2a24;
 }
 </style>

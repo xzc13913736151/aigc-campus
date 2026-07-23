@@ -181,7 +181,7 @@ async function handleDemoLogin() {
   display: flex;
   align-items: center;
   gap: 16rpx;
-  color: #8a929c;
+  color: #999084;
   font-size: 22rpx;
 }
 

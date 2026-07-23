@@ -144,6 +144,8 @@ function toggleAssistant() {
 </script>
 
 <style scoped lang="scss">
+@use '../styles/tokens' as t;
+
 .tab-shell {
   position: relative;
   z-index: 9999;
@@ -154,12 +156,11 @@ function toggleAssistant() {
   left: 0;
   right: 0;
   bottom: 0;
-  min-height: 124rpx;
-  padding: 12rpx 18rpx calc(env(safe-area-inset-bottom) + 12rpx);
-  border-radius: 36rpx 36rpx 0 0;
-  background: rgba(255, 250, 245, 0.995);
-  border-top: 1rpx solid rgba(16, 33, 51, 0.12);
-  box-shadow: 0 -12rpx 40rpx rgba(16, 33, 51, 0.12);
+  min-height: 116rpx;
+  padding: 10rpx 18rpx calc(env(safe-area-inset-bottom) + 10rpx);
+  background: rgba(255, 252, 247, 0.98);
+  border-top: 1rpx solid t.$color-line;
+  box-shadow: 0 -8rpx 28rpx rgba(67, 50, 38, 0.08);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -191,7 +192,7 @@ function toggleAssistant() {
   width: 28rpx;
   height: 28rpx;
   border-radius: 10rpx;
-  background: rgba(16, 33, 51, 0.18);
+  background: t.$color-line;
 }
 
 .icon-forum {
@@ -215,69 +216,57 @@ function toggleAssistant() {
 .tab-label {
   font-size: 24rpx;
   font-weight: 600;
-  color: #7a7f87;
+  color: t.$color-ink-muted;
 }
 
 .tab-item.active .tab-icon {
-  background: #f16b4f;
+  background: t.$color-brand;
 }
 
 .tab-item.active .tab-label {
-  color: #f16b4f;
+  color: t.$color-brand-deep;
 }
 
 .assistant-entry {
-  flex: 0 0 124rpx;
-  height: 124rpx;
-  margin-top: -24rpx;
+  flex: 0 0 112rpx;
+  height: 112rpx;
+  margin-top: -18rpx;
   gap: 0;
 }
 
 .assistant-orb {
   position: relative;
-  width: 96rpx;
-  height: 96rpx;
-  border-radius: 50%;
-  padding: 6rpx;
-  background:
-    radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.72), transparent 30%),
-    linear-gradient(135deg, #f16b4f, #f5a44c);
-  box-shadow: 0 14rpx 28rpx rgba(241, 107, 79, 0.22);
-}
-
-.assistant-orb::after {
-  content: '';
-  position: absolute;
-  top: 10rpx;
-  right: 12rpx;
-  width: 14rpx;
-  height: 14rpx;
-  border-radius: 50%;
-  background: #fff3d9;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 28rpx;
+  padding: 5rpx;
+  background: t.$color-ai;
+  box-shadow: 0 10rpx 24rpx rgba(67, 50, 38, 0.16);
 }
 
 .assistant-orb-core {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: 24rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-size: 28rpx;
-  font-weight: 800;
-  background: rgba(255, 255, 255, 0.08);
+  color: t.$color-inverse;
+  font-size: 25rpx;
+  font-weight: 700;
+  letter-spacing: 1rpx;
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .assistant-label {
   font-size: 24rpx;
   font-weight: 700;
-  color: #102133;
+  color: t.$color-ink;
 }
 
 .assistant-sub-label {
   font-size: 20rpx;
-  color: #8a929c;
+  color: t.$color-ink-muted;
   line-height: 1;
 }
 </style>

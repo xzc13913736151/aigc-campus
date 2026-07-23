@@ -11,6 +11,10 @@ export function fetchMyProfile() {
   return request<ProfileResponse>('profile/me/')
 }
 
+export function fetchUserProfile(userId: string) {
+  return request<ProfileResponse>(`profile/users/${userId}/`)
+}
+
 export function updateMyProfile(payload: UpdateMyProfilePayload) {
   return request<ProfileResponse>('profile/me/', {
     method: 'PUT',

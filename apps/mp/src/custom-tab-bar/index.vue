@@ -219,15 +219,15 @@ function toggleAssistant() {
 .tab-label {
   font-size: 24rpx;
   font-weight: 600;
-  color: #7a7f87;
+  color: #6f675d;
 }
 
 .tab-item.active .tab-icon {
-  background: #f16b4f;
+  background: #c15f3c;
 }
 
 .tab-item.active .tab-label {
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .assistant-entry {
@@ -237,7 +237,7 @@ function toggleAssistant() {
 }
 
 .assistant-entry.active .assistant-label {
-  color: #f16b4f;
+  color: #c15f3c;
 }
 
 .assistant-orb {
@@ -248,7 +248,7 @@ function toggleAssistant() {
   padding: 6rpx;
   background:
     radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.72), transparent 30%),
-    linear-gradient(135deg, #f16b4f, #f5a44c);
+    linear-gradient(135deg, #c15f3c, #b77a32);
   box-shadow: 0 18rpx 36rpx rgba(241, 107, 79, 0.24);
 }
 
@@ -280,12 +280,12 @@ function toggleAssistant() {
 .assistant-label {
   font-size: 24rpx;
   font-weight: 700;
-  color: #102133;
+  color: #2f2a24;
 }
 
 .assistant-sub-label {
   font-size: 20rpx;
-  color: #8a929c;
+  color: #999084;
   line-height: 1;
 }
 </style>
