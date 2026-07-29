@@ -3,6 +3,7 @@ from drf_spectacular.utils import extend_schema_field
 
 from accounts.serializers import UserSerializer
 from common.uploads import validate_uploaded_image
+from .categories import FORUM_CATEGORIES
 from .models import ForumComment, ForumCommentLike, ForumPost, ForumPostImage
 
 
@@ -41,6 +42,7 @@ class ForumCommentSerializer(serializers.ModelSerializer):
 
 
 class ForumPostSerializer(serializers.ModelSerializer):
+    category = serializers.ChoiceField(choices=FORUM_CATEGORIES)
     author = UserSerializer(read_only=True)
     comments = serializers.SerializerMethodField()
     like_count = serializers.SerializerMethodField()

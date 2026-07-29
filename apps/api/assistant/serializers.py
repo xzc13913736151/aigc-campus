@@ -7,7 +7,7 @@ from .models import AssistantActionProposal, AssistantMessage, AssistantSession
 class AssistantMessageSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssistantMessage
-        fields = ("id", "role", "body", "created_at", "updated_at")
+        fields = ("id", "role", "body", "presentation", "created_at", "updated_at")
         read_only_fields = fields
 
 

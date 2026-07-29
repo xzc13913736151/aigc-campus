@@ -30,8 +30,12 @@
         </view>
 
         <view class="field">
-          <text class="label">价格（元）· 选填</text>
-          <input v-model="form.price" class="input" type="digit" placeholder="留空则表示价格面议" />
+          <text class="label">价格方式</text>
+          <view class="segmented-control">
+            <view class="segment" :class="{ active: form.price_mode === 'fixed' }" @tap="setPriceMode('fixed')">固定价格</view>
+            <view class="segment" :class="{ active: form.price_mode === 'negotiable' }" @tap="setPriceMode('negotiable')">面议</view>
+          </view>
+          <input v-if="form.price_mode === 'fixed'" v-model="form.price" class="input price-input" type="digit" placeholder="请输入价格（元）" />
         </view>
 
         <view class="field">
@@ -44,9 +48,12 @@
           <input v-model="form.tagsText" class="input" type="text" placeholder="多个标签用逗号分隔，如：数码,书本,衣物" />
         </view>
 
-        <view class="toggle-field">
+        <view class="field">
           <text class="label">可议价</text>
-          <switch :checked="form.is_negotiable" color="#c15f3c" @change="handleNegotiableChange" />
+          <view class="segmented-control">
+            <view class="segment" :class="{ active: form.is_negotiable === true }" @tap="setNegotiable(true)">可以</view>
+            <view class="segment" :class="{ active: form.is_negotiable === false }" @tap="setNegotiable(false)">不可以</view>
+          </view>
         </view>
 
         <text v-if="errorMessage && !fieldError" class="error">{{ errorMessage }}</text>
@@ -90,9 +97,10 @@ const form = reactive({
   title: '',
   description: '',
   price: '',
+  price_mode: '' as '' | 'fixed' | 'negotiable',
   condition: '',
   tagsText: '',
-  is_negotiable: true,
+  is_negotiable: null as boolean | null,
 })
 
 const typeIndex = computed(() => typeValues.indexOf(form.post_type))
@@ -116,7 +124,15 @@ function applyAssistantDraft() {
   form.title = typeof payload.title === 'string' ? payload.title : form.title
   form.description = typeof payload.description === 'string' ? payload.description : form.description
   form.price = payload.price === null || payload.price === undefined ? form.price : String(payload.price)
+  if (payload.price_mode === 'fixed' || payload.price_mode === 'negotiable') {
+    form.price_mode = payload.price_mode
+  } else if (payload.price !== null && payload.price !== undefined) {
+    form.price_mode = 'fixed'
+  }
   form.condition = typeof payload.condition === 'string' ? payload.condition : form.condition
+  if (typeof payload.is_negotiable === 'boolean') {
+    form.is_negotiable = payload.is_negotiable
+  }
   if (Array.isArray(payload.tags)) {
     form.tagsText = payload.tags.map(String).join(', ')
   } else if (typeof payload.tags === 'string') {
@@ -134,8 +150,15 @@ function handleTypeChange(e: { detail?: { value?: string | number } }) {
   form.post_type = typeValues[idx] as typeof form.post_type
 }
 
-function handleNegotiableChange(e: { detail?: { value?: boolean } }) {
-  form.is_negotiable = Boolean(e.detail?.value)
+function setPriceMode(mode: 'fixed' | 'negotiable') {
+  form.price_mode = mode
+  if (mode === 'negotiable') {
+    form.price = ''
+  }
+}
+
+function setNegotiable(value: boolean) {
+  form.is_negotiable = value
 }
 
 function splitList(value: string) {
@@ -159,6 +182,10 @@ function handleSubmit() {
     errorMessage.value = '描述至少需要 10 个字'
     return
   }
+  if (form.price_mode === 'fixed' && (!form.price || Number(form.price) < 0)) {
+    errorMessage.value = '请输入正确的价格'
+    return
+  }
 
   showPreview.value = true
 }
@@ -166,13 +193,13 @@ function handleSubmit() {
 async function confirmSubmit() {
   submitting.value = true
   try {
-    const price = form.price ? parseFloat(form.price) : null
+    const price = form.price_mode === 'fixed' ? parseFloat(form.price) : null
     await createTradePost({
       post_type: form.post_type,
       title: form.title.trim(),
       description: form.description.trim(),
       price,
-      is_negotiable: form.is_negotiable,
+      is_negotiable: form.is_negotiable ?? false,
       condition: form.condition.trim(),
       tags: splitList(form.tagsText),
     })
@@ -213,11 +240,38 @@ async function confirmSubmit() {
   padding: 24rpx;
 }
 
-.toggle-field {
+.segmented-control {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20rpx 0;
+  width: 100%;
+  min-height: 72rpx;
+  padding: 6rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  border-radius: 12rpx;
+  background: #f4f1ed;
+}
+
+.segment {
+  flex: 1;
+  min-width: 0;
+  min-height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8rpx;
+  color: #68727f;
+  font-size: 25rpx;
+}
+
+.segment.active {
+  color: #b94733;
+  background: #fff;
+  box-shadow: 0 2rpx 8rpx rgba(16, 33, 51, 0.08);
+}
+
+.price-input {
+  margin-top: 14rpx;
 }
 
 .error {

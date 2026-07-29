@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import AssistantActionProposal, AssistantMessage, AssistantSession
-from .orchestrator import plan_assistant_turn
+from .orchestrator import build_assistant_presentation, plan_assistant_turn
 from .serializers import (
     AssistantActionExecuteResponseSerializer,
     AssistantActionProposalSerializer,
@@ -91,6 +91,7 @@ class AssistantMessageListCreateAPIView(generics.ListCreateAPIView):
             session=session,
             role=AssistantMessage.Role.ASSISTANT,
             body=assistant_body,
+            presentation=build_assistant_presentation(next_state, proposal_payloads),
         )
         actions = [
             AssistantActionProposal.objects.create(**{**proposal_data, "message": assistant_message})

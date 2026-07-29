@@ -10,7 +10,13 @@
     </view>
 
     <view style="height: 14rpx" />
-    <text class="action-desc">{{ previewText }}</text>
+    <view v-if="previewFields.length" class="preview-fields">
+      <view v-for="field in previewFields" :key="String(field.key)" class="preview-field">
+        <text class="preview-label">{{ String(field.label || '') }}</text>
+        <text class="preview-value">{{ String(field.display_value || '未说明') }}</text>
+      </view>
+    </view>
+    <text v-else class="action-desc">{{ previewText }}</text>
     <view style="height: 16rpx" />
 
     <view v-if="recommendations.length" class="recommendation-list">
@@ -36,12 +42,6 @@
           <button v-if="hasDraft(item)" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'fill')">
             {{ fillButtonText(item) }}
           </button>
-          <button v-if="getRecommendationText(item, 'type') === 'dating'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'interested')">
-            感兴趣
-          </button>
-          <button v-if="getRecommendationText(item, 'type') === 'dating'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'skip')">
-            跳过
-          </button>
           <button v-if="getRecommendationText(item, 'type') === 'trade'" class="action-button ghost compact" :disabled="disabled" @tap="$emit('recommend', action, item, 'favorite')">
             收藏
           </button>
@@ -49,15 +49,21 @@
       </view>
     </view>
 
-    <view v-else class="action-buttons">
+    <view v-else-if="isMessageAction" class="action-buttons">
       <button class="action-button primary" :disabled="disabled" @tap="$emit('execute', action)">
-        填充并发布
+        确认发送
       </button>
-      <button class="action-button ghost" :disabled="disabled" @tap="$emit('fill', action)">
-        仅填充
+      <button class="action-button ghost" :disabled="disabled" @tap="$emit('revise', action)">
+        继续修改
       </button>
-      <button class="action-button ghost" :disabled="busy" @tap="$emit('generate', action)">
-        仅生成
+    </view>
+
+    <view v-else class="action-buttons">
+      <button class="action-button primary" :disabled="disabled" @tap="$emit('fill', action)">
+        填入表单
+      </button>
+      <button class="action-button ghost" :disabled="disabled" @tap="$emit('revise', action)">
+        继续修改
       </button>
     </view>
   </view>
@@ -74,13 +80,14 @@ const props = defineProps<{
 }>()
 
 defineEmits<{
-  execute: [AssistantActionProposal]
   fill: [AssistantActionProposal]
-  generate: [AssistantActionProposal]
-  recommend: [AssistantActionProposal, Record<string, unknown>, 'open' | 'contact' | 'fill' | 'interested' | 'skip' | 'favorite']
+  execute: [AssistantActionProposal]
+  revise: [AssistantActionProposal]
+  recommend: [AssistantActionProposal, Record<string, unknown>, 'open' | 'contact' | 'fill' | 'favorite']
 }>()
 
 const disabled = computed(() => props.action.status !== 'pending' || Boolean(props.busy))
+const isMessageAction = computed(() => ['chat_message_send', 'context_chat_message_send', 'chat_message_batch_send'].includes(props.action.kind))
 const statusText = computed(() => {
   const labels: Record<string, string> = {
     pending: '待确认',
@@ -94,6 +101,11 @@ const statusText = computed(() => {
 const previewText = computed(() => {
   const preview = props.action.preview || {}
   return String(preview.body || preview.title || preview.action || 'AI 已准备好可执行内容，请确认后继续。')
+})
+
+const previewFields = computed<Record<string, unknown>[]>(() => {
+  const fields = props.action.preview?.fields
+  return Array.isArray(fields) ? fields.filter((field): field is Record<string, unknown> => Boolean(field && typeof field === 'object')) : []
 })
 
 const recommendations = computed<Record<string, unknown>[]>(() => {
@@ -182,6 +194,37 @@ function fillButtonText(item: Record<string, unknown>) {
   line-height: 1.6;
   color: t.$color-ink-secondary;
   white-space: pre-wrap;
+}
+
+.preview-fields {
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-field {
+  display: grid;
+  grid-template-columns: 128rpx minmax(0, 1fr);
+  gap: 14rpx;
+  padding: 13rpx 0;
+  border-bottom: 1rpx solid rgba(16, 33, 51, 0.07);
+}
+
+.preview-field:last-child {
+  border-bottom: 0;
+}
+
+.preview-label {
+  font-size: 22rpx;
+  color: #6b7280;
+}
+
+.preview-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: #102133;
 }
 
 .action-buttons,

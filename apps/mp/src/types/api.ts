@@ -239,8 +239,31 @@ export type AssistantMessage = {
   id: string
   role: 'user' | 'assistant'
   body: string
+  presentation?: AssistantPresentation
   created_at: string
   updated_at: string
+}
+
+export type AssistantPresentationField = {
+  key: string
+  label: string
+  value: unknown
+  display_value: string
+  source: 'user' | 'context' | 'ai' | 'missing'
+  required: boolean
+  options?: Array<{ label: string; value: unknown }>
+  custom_prompt?: string
+  hint?: string
+  confidence?: number
+}
+
+export type AssistantPresentation = {
+  type: 'text' | 'clarification' | 'draft' | 'recommendations' | 'result'
+  intent: string
+  title: string
+  fields: AssistantPresentationField[]
+  missing_fields: string[]
+  suggestions: string[]
 }
 
 export type AssistantActionProposal = {
@@ -262,6 +285,7 @@ export type AssistantActionProposal = {
     | 'dating_preference_update'
     | 'dating_signal'
     | 'chat_message_send'
+    | 'chat_message_batch_send'
     | 'profile_update'
   title: string
   target_page: string
@@ -284,6 +308,7 @@ export type AssistantSessionState = {
   collected_payload?: Record<string, unknown>
   expanded_preview?: string
   last_question?: string
+  recipient_options?: Array<{ id: string; label: string; claw_id: string }>
 }
 
 export type AssistantSession = {

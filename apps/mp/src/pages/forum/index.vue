@@ -176,6 +176,7 @@ import BottomTabBar from "../../components/BottomTabBar.vue";
 import CachedImage from "../../components/CachedImage.vue";
 import LikeButton from "../../components/LikeButton.vue";
 import UserAvatar from "../../components/UserAvatar.vue";
+import { FORUM_CATEGORIES } from "../../constants/forum";
 import type { ForumPost } from "../../types/api";
 import {
   fetchForumPosts,
@@ -194,13 +195,7 @@ import { showToast } from "../../utils/ui";
 
 const categories = [
   "全部",
-  "校园日常",
-  "学习交流",
-  "活动组局",
-  "实习求职",
-  "项目合作",
-  "组队招募",
-  "情绪树洞",
+  ...FORUM_CATEGORIES,
 ];
 const selectedCategory = ref("全部");
 const query = ref("");

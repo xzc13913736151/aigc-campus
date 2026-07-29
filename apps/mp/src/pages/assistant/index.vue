@@ -47,7 +47,14 @@
         <view v-else class="avatar avatar-user">
           <text>我</text>
         </view>
-        <view class="message-content">
+        <AssistantPresentationCard
+          v-if="message.role === 'assistant' && message.presentation?.type === 'draft'"
+          class="message-presentation"
+          :presentation="message.presentation"
+          @suggest="handleQuickReply"
+          @custom="handleCustomField"
+        />
+        <view v-else class="message-content">
           <text class="message-text">{{ message.body }}</text>
           <text class="message-time">{{ formatTime(message.created_at) }}</text>
         </view>
@@ -67,9 +74,8 @@
           :key="action.id"
           :action="action"
           :busy="actionBusyId === action.id"
-          @execute="handleExecuteAction"
           @fill="handleFillAction"
-          @generate="handleGenerateOnly"
+          @revise="handleReviseAction"
           @recommend="handleRecommendationAction"
         />
       </view>
@@ -106,6 +112,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 
 import AssistantActionCard from '../../components/assistant/AssistantActionCard.vue'
+import AssistantPresentationCard from '../../components/assistant/AssistantPresentationCard.vue'
 import type { AssistantActionProposal, AssistantMessage } from '../../types/api'
 import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
 import { sendDatingSignal } from '../../services/dating'
@@ -127,12 +134,7 @@ const lastLocalMutationAt = ref(0)
 const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
 const ASSISTANT_UI_DEBUG = false
 
-const quickReplies = [
-  '帮我推荐一个比赛',
-  '如何发布组队帖子？',
-  '论坛使用帮助',
-  '恋爱匹配说明',
-]
+const quickReplies = ['帮我写一条校园帖子', '帮我整理闲置发布', '推荐适合我的组队', '帮我写一句自然的开场白']
 
 const canSend = computed(() => inputText.value.trim().length > 0 && !loading.value)
 
@@ -359,6 +361,10 @@ function handleQuickReply(text: string) {
   handleSend()
 }
 
+function handleCustomField(prompt: string) {
+  inputText.value = prompt
+}
+
 async function reloadSession() {
   try {
     clearLateResponseRecovery()
@@ -390,6 +396,10 @@ function handleFillAction(action: AssistantActionProposal) {
   saveAssistantDraft(action)
   showToast('已填入草稿', 'success')
   openTargetPage(action.target_page)
+}
+
+function handleReviseAction() {
+  inputText.value = '我想修改这版草稿：'
 }
 
 function handleGenerateOnly(action: AssistantActionProposal) {
@@ -626,6 +636,12 @@ function formatTime(value: string) {
   margin: 0 16rpx;
   padding: 18rpx 22rpx;
   border-radius: 24rpx;
+}
+
+.message-presentation {
+  width: calc(100% - 96rpx);
+  max-width: 620rpx;
+  margin: 0 16rpx;
 }
 
 .message-assistant .message-content {

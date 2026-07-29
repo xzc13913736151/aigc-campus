@@ -9,6 +9,18 @@ import re
 from typing import Any
 
 from django.utils import timezone
+from django.contrib.auth import get_user_model
+from django.db.models import Q
+from chat.models import ChatThread
+from forum.categories import (
+    FORUM_CATEGORIES,
+    FORUM_CATEGORY_GUIDANCE,
+    classify_forum_category,
+    explicit_forum_category,
+    looks_like_activity_group,
+    looks_like_team_recruitment,
+)
+from moderation.services import get_blocked_user_ids
 
 from .agent import AgentCallError, call_agent, call_agent_json
 from .recommendations import build_icebreaker_action, build_recommendation_action
@@ -17,6 +29,7 @@ from .skills import SKILLS, _guess_kind
 
 
 logger = logging.getLogger(__name__)
+User = get_user_model()
 ASSISTANT_DEBUG = os.getenv("ASSISTANT_DEBUG", "").lower() in {"1", "true", "yes"}
 
 
@@ -97,7 +110,6 @@ GENERATE_WORDS = (
 SELF_FILL_WORDS = ("我自己填写", "我自己填", "我自己来", "只填充", "直接填充", "我先自己改")
 REVISE_WORDS = ("修改", "改成", "改一下", "优化", "润色", "重写", "太短", "太长", "更")
 
-FORUM_CATEGORIES = ("校园日常", "学习交流", "活动组局", "实习求职", "项目合作", "组队招募", "情绪树洞")
 TRADE_TYPE_MAP = {
     "出售": "sell",
     "卖": "sell",
@@ -133,13 +145,12 @@ COMMON_SKILLS = (
     "Java",
 )
 DATING_PREFERENCE_KEYWORDS = ("真诚", "开朗", "温柔", "靠谱", "幽默", "稳定", "上进", "阳光", "好沟通", "边界感", "同频", "认真")
-STUDY_CATEGORY_KEYWORDS = ("学习", "复习", "高数", "考试", "自习", "图书馆", "课程", "作业", "考研", "四六级")
-TEAM_INTENT_KEYWORDS = ("小程序", "项目", "前端", "后端", "队友", "组队", "招募", "目标", "开发", "产品", "设计", "算法")
 TRADE_OBJECT_KEYWORDS = ("出", "出售", "卖", "转让", "闲置", "求购", "收", "交换", "换", "价格", "元", "可小刀", "面交", "成新")
 TRADE_SELL_KEYWORDS = ("出", "出售", "卖", "转让", "闲置")
 TRADE_BUY_KEYWORDS = ("求购", "收", "想买")
 TRADE_EXCHANGE_KEYWORDS = ("交换", "互换", "换")
 TRADE_SERVICE_KEYWORDS = ("服务", "代做", "帮忙")
+STANDALONE_GREETINGS = {"hi", "hello", "你好", "您好", "嗨", "哈喽", "在吗", "在不在"}
 AGENT_ALLOWED_INTENTS = {
     "forum_post_create",
     "dating_setup",
@@ -149,6 +160,7 @@ AGENT_ALLOWED_INTENTS = {
     "trade_favorite",
     "context_chat_message_send",
     "chat_message_send",
+    "chat_message_batch_send",
     "profile_update",
     "forum_comment_create",
 }
@@ -169,11 +181,12 @@ AGENT_PAYLOAD_FIELDS = {
     "forum_comment_create": {"post_id", "parent", "body"},
     "team_post_create": {"title", "summary", "details", "target_size", "tags", "required_skills"},
     "team_apply": {"post_id", "message"},
-    "trade_post_create": {"post_type", "title", "description", "price", "condition", "tags", "is_negotiable"},
+    "trade_post_create": {"post_type", "title", "description", "price", "price_mode", "condition", "tags", "is_negotiable"},
     "trade_favorite": {"post_id"},
     "context_chat_message_send": {"target_user_id", "source_type", "source_id", "body"},
     "profile_update": {"nickname", "headline", "bio", "gender", "major", "grade", "interests"},
     "chat_message_send": {"thread_id", "body"},
+    "chat_message_batch_send": {"target_user_ids", "recipient_names", "body"},
     "dating_setup": {"profile", "preference"},
 }
 AGENT_DATING_PROFILE_FIELDS = {"nickname", "gender", "height_cm", "weight_kg", "age", "interests", "bio", "is_visible"}
@@ -193,6 +206,7 @@ PAYLOAD_GENERATION_INTENTS = {
     "trade_post_create",
     "dating_setup",
     "profile_update",
+    "chat_message_batch_send",
 }
 
 
@@ -206,6 +220,9 @@ def _empty_state() -> dict[str, Any]:
         "missing_fields": [],
         "missing_field_labels": [],
         "expanded_preview": "",
+        "classification": {},
+        "field_sources": {},
+        "recipient_options": [],
         "last_question": "",
         "question_field": "",
     }
@@ -222,11 +239,119 @@ def _normalize_state(raw: dict[str, Any] | None) -> dict[str, Any]:
         state["missing_fields"] = []
     if not isinstance(state.get("missing_field_labels"), list):
         state["missing_field_labels"] = []
+    if not isinstance(state.get("classification"), dict):
+        state["classification"] = {}
+    if not isinstance(state.get("field_sources"), dict):
+        state["field_sources"] = {}
+    if not isinstance(state.get("recipient_options"), list):
+        state["recipient_options"] = []
     return state
 
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _is_standalone_greeting(prompt: str) -> bool:
+    clean = re.sub(r"[\s,，。.!！?？~～]+", "", _text(prompt)).lower()
+    return clean in STANDALONE_GREETINGS
+
+
+def _message_recipient_candidates(user, limit: int = 8) -> list[dict[str, str]]:
+    if not user or not getattr(user, "is_authenticated", False):
+        return []
+    blocked_ids = set(get_blocked_user_ids(user))
+    threads = (
+        ChatThread.objects.select_related("user_a", "user_b")
+        .filter(Q(user_a=user) | Q(user_b=user))
+        .order_by("-updated_at")
+    )
+    candidates: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for thread in threads:
+        counterpart = thread.user_b if thread.user_a_id == user.id else thread.user_a
+        counterpart_id = str(counterpart.id)
+        if counterpart.id in blocked_ids or counterpart_id in seen or not counterpart.is_active:
+            continue
+        seen.add(counterpart_id)
+        candidates.append(
+            {
+                "id": counterpart_id,
+                "label": counterpart.nickname or counterpart.full_name or counterpart.claw_id,
+                "claw_id": counterpart.claw_id,
+            }
+        )
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _recipient_names_from_prompt(prompt: str) -> list[str]:
+    clean = _clean_prompt(prompt)
+    match = re.search(
+        r"(?:收件人(?:添加|改成|是|为)?|给)\s*[：:]?\s*(.+?)(?=\s*(?:群发|发送|发消息|发一条|发|说|，|,|。|$))",
+        clean,
+    )
+    if not match:
+        return []
+    return [item.strip() for item in re.split(r"[、,，和与及]+", match.group(1)) if item.strip()]
+
+
+def _resolve_batch_recipients(user, payload: dict[str, Any], prompt: str) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    next_payload = deepcopy(payload)
+    candidates = _message_recipient_candidates(user, 20)
+    candidate_by_id = {item["id"]: item for item in candidates}
+    selected_ids = [
+        item for item in _clean_string_list(next_payload.get("target_user_ids"), 20)
+        if item in candidate_by_id
+    ]
+
+    direct_names = _recipient_names_from_prompt(prompt)
+    if direct_names:
+        direct_ids: list[str] = []
+        blocked_ids = set(get_blocked_user_ids(user))
+        for name in direct_names:
+            matched = next(
+                (
+                    item for item in candidates
+                    if name in {item["label"], item["claw_id"]}
+                ),
+                None,
+            )
+            if matched:
+                direct_ids.append(matched["id"])
+                continue
+            target = (
+                User.objects.filter(is_active=True)
+                .exclude(id=user.id)
+                .filter(Q(claw_id__iexact=name.upper()) | Q(nickname__iexact=name) | Q(full_name__iexact=name))
+                .first()
+            )
+            if target and target.id not in blocked_ids:
+                target_id = str(target.id)
+                direct_ids.append(target_id)
+                candidate_by_id[target_id] = {
+                    "id": target_id,
+                    "label": target.nickname or target.full_name or target.claw_id,
+                    "claw_id": target.claw_id,
+                }
+        if "添加" in prompt:
+            selected_ids.extend(direct_ids)
+        else:
+            selected_ids = direct_ids
+
+    selected_ids = list(dict.fromkeys(selected_ids))[:20]
+    selected_users = {
+        str(item.id): item
+        for item in User.objects.filter(id__in=selected_ids, is_active=True)
+    }
+    selected_ids = [item for item in selected_ids if item in selected_users and selected_users[item].id != user.id]
+    next_payload["target_user_ids"] = selected_ids
+    next_payload["recipient_names"] = [
+        selected_users[item].nickname or selected_users[item].full_name or selected_users[item].claw_id
+        for item in selected_ids
+    ]
+    return next_payload, list(candidate_by_id.values())[:20]
 
 
 def _clean_prompt(prompt: str) -> str:
@@ -287,6 +412,7 @@ def _looks_like_dating_request(prompt: str) -> bool:
 def _extract_dating_preference_from_prompt(prompt: str) -> list[str]:
     clean = _clean_prompt(prompt)
     values: list[str] = []
+    preference_signals = ("希望认识", "想认识", "想找", "希望找", "期待认识", "希望对方")
     match = re.search(
         r"(?:\u5e0c\u671b\u8ba4\u8bc6|\u60f3\u8ba4\u8bc6|\u60f3\u627e|\u5e0c\u671b\u627e|\u671f\u5f85\u8ba4\u8bc6)([^。\uff01\uff1f\n]+)",
         clean,
@@ -307,7 +433,8 @@ def _extract_dating_preference_from_prompt(prompt: str) -> list[str]:
         "\u8fb9\u754c\u611f",
         "\u8ba4\u771f",
     )
-    values.extend(keyword for keyword in keyword_values if keyword in clean)
+    if any(signal in clean for signal in preference_signals):
+        values.extend(keyword for keyword in keyword_values if keyword in clean)
     return list(dict.fromkeys(value for value in values if value))[:8]
 
 
@@ -454,7 +581,7 @@ def _extract_tag_list(prompt: str, label: str) -> list[str]:
 
 def _extract_label_value(prompt: str, labels: tuple[str, ...]) -> str:
     for label in labels:
-        match = re.search(rf"{label}[：:]\s*([^\n]+)", prompt)
+        match = re.search(rf"{label}[：:]\s*([^\n；;]+)", prompt)
         if match:
             return _text(match.group(1))
     return ""
@@ -569,9 +696,11 @@ def _extract_trade_condition(prompt: str) -> str:
 
 def _extract_negotiable(prompt: str) -> bool | None:
     clean = _clean_prompt(prompt)
-    if any(word in clean for word in ("不议价", "不刀", "谢绝还价", "固定价")):
+    if re.search(r"(?:不|不可|不能|不接受|拒绝|谢绝)(?:支持)?(?:议价|还价|讲价|砍价|小刀)", clean) or any(
+        word in clean for word in ("不议价", "不刀", "谢绝还价", "固定价", "一口价")
+    ):
         return False
-    if any(word in clean for word in ("可议价", "可小刀", "小刀", "面议", "能谈", "可谈")):
+    if any(word in clean for word in ("可议价", "可以议价", "接受议价", "可小刀", "小刀", "面议", "能谈", "可谈", "可以谈")):
         return True
     return None
 
@@ -675,6 +804,99 @@ def _ensure_generated_text(
     return _fallback_expand_text(field_key, clean or source_prompt or fallback, min_length, fallback)
 
 
+def _user_fact_context(history, prompt: str) -> str:
+    user_messages = [
+        _text(getattr(message, "body", ""))
+        for message in list(history or [])[-8:]
+        if _text(getattr(message, "role", "")) == "user" and _text(getattr(message, "body", ""))
+    ]
+    user_messages.append(_clean_prompt(prompt))
+    return "。".join(dict.fromkeys(item for item in user_messages if item))
+
+
+def _remove_unsupported_clauses(text: str, unsupported_patterns: tuple[str, ...]) -> str:
+    parts = re.split(r"([，,。；;！？!?])", _clean_prompt(text))
+    kept: list[str] = []
+    for index in range(0, len(parts), 2):
+        clause = parts[index].strip()
+        punctuation = parts[index + 1] if index + 1 < len(parts) else ""
+        if not clause or any(re.search(pattern, clause) for pattern in unsupported_patterns):
+            continue
+        kept.append(clause + punctuation)
+    clean = "".join(kept).strip("，,。；;！？!? ")
+    return f"{clean}。" if clean else ""
+
+
+def _sanitize_trade_description(description: str, fact_context: str) -> str:
+    unsupported: list[str] = []
+    negotiable = _extract_negotiable(fact_context)
+    if negotiable is not True:
+        unsupported.extend((r"价格.*(?:可商议|可协商|可谈|面议)", r"(?:支持|接受|可以|可)(?:议价|还价|讲价|砍价|小刀)"))
+    if negotiable is not False:
+        unsupported.extend((r"(?:不|不可|不能|不接受|拒绝|谢绝)(?:议价|还价|讲价|砍价)", r"一口价"))
+
+    condition_evidence = _extract_trade_condition(fact_context)
+    if not condition_evidence:
+        unsupported.extend((r"(?:外观|机身|屏幕).*(?:无损|无明显损坏|无划痕|有划痕)", r"[一二三四五六七八九十1-9]成新|全新|几乎全新|未拆封"))
+
+    function_evidence = any(
+        word in fact_context
+        for word in ("功能正常", "正常使用", "一切正常", "无故障", "运行流畅", "使用流畅", "屏幕无坏点", "续航", "电池")
+    )
+    if not function_evidence:
+        unsupported.extend((r"功能.*正常", r"(?:运行|使用).*流畅", r"无故障", r"屏幕无坏点", r"电池.*良好"))
+
+    if not any(word in fact_context for word in ("维修", "拆修", "修过")):
+        unsupported.extend((r"(?:无|没有|从未)(?:维修|拆修)", r"维修记录"))
+    if not any(word in fact_context for word in ("配件", "充电器", "数据线", "包装", "盒子")):
+        unsupported.extend((r"配件.*(?:齐全|完整)", r"(?:原装)?(?:充电器|数据线|包装|盒子).*齐全"))
+
+    sanitized = _remove_unsupported_clauses(description, tuple(unsupported))
+    if sanitized:
+        return sanitized
+    subject = _derive_title(fact_context, "二手物品")
+    return f"出售{subject}，具体型号、状态和交易信息以实际补充为准。"
+
+
+def _refresh_trade_description(description: str, payload: dict[str, Any], fact_context: str) -> str:
+    """Keep descriptive wording while making trade facts match the authoritative fields."""
+    clean = _sanitize_trade_description(description, fact_context)
+    clean = _remove_unsupported_clauses(
+        clean,
+        (
+            r"(?:成色|新旧程度|商品状况)(?:为|是|：|:)?",
+            r"(?:价格|售价)(?:为|是|：|:)?\s*(?:¥|￥)?\s*\d",
+            r"(?:价格)?面议",
+            r"价格.*(?:可商议|可协商|可谈)",
+            r"(?:支持|接受|可以|可|不|不可|不能|不接受|拒绝|谢绝)(?:议价|还价|讲价|砍价|小刀)",
+            r"一口价",
+        ),
+    ).rstrip("。")
+
+    facts: list[str] = []
+    condition = _text(payload.get("condition"))
+    if condition and condition != "无":
+        facts.append(f"成色为{condition}")
+
+    price = payload.get("price")
+    price_mode = _text(payload.get("price_mode"))
+    if price not in {None, ""}:
+        numeric_price = float(price)
+        display_price = str(int(numeric_price)) if numeric_price.is_integer() else str(numeric_price).rstrip("0").rstrip(".")
+        facts.append(f"价格为{display_price}元")
+    elif price_mode == "negotiable":
+        facts.append("价格面议")
+
+    negotiable = _coerce_optional_bool(payload.get("is_negotiable"))
+    if negotiable is True and price_mode != "negotiable":
+        facts.append("价格可协商")
+    elif negotiable is False:
+        facts.append("不接受议价")
+
+    parts = [part for part in (clean, "，".join(facts)) if part]
+    return "，".join(parts).strip("，。 ") + "。"
+
+
 def _ensure_min_text(field_key: str, field_label: str, seed_text: str, min_length: int, fallback: str, intent_label: str) -> str:
     clean = _clean_prompt(seed_text)
     if len(clean) >= min_length:
@@ -692,7 +914,7 @@ def _default_payload_for_kind(kind: str, session, prompt: str) -> dict[str, Any]
     if kind == "team_post_create":
         return {"title": "", "summary": "", "details": clean, "target_size": None, "tags": [], "required_skills": []}
     if kind == "trade_post_create":
-        return {"post_type": "", "title": "", "description": clean, "price": None, "condition": "", "tags": [], "is_negotiable": True}
+        return {"post_type": "", "title": "", "description": clean, "price": None, "price_mode": "", "condition": "", "tags": [], "is_negotiable": None}
     if kind == "team_apply":
         return {"post_id": session.context_target_id, "message": clean}
     if kind == "trade_favorite":
@@ -710,8 +932,10 @@ def _default_payload_for_kind(kind: str, session, prompt: str) -> dict[str, Any]
         return {"post_id": session.context_target_id, "parent": "", "body": clean}
     if kind == "chat_message_send":
         return {"thread_id": session.context_target_id, "body": clean}
+    if kind == "chat_message_batch_send":
+        return {"target_user_ids": [], "recipient_names": [], "body": clean}
     if kind == "dating_profile_update":
-        return {"nickname": "", "gender": "unknown", "height_cm": None, "weight_kg": None, "age": None, "interests": [], "bio": clean, "is_visible": True}
+        return {"nickname": "", "gender": "unknown", "height_cm": None, "weight_kg": None, "age": None, "interests": [], "bio": clean, "is_visible": None}
     if kind == "dating_preference_update":
         return {"preferred_genders": [], "preferred_interests": [], "min_height_cm": None, "max_height_cm": None, "min_weight_kg": None, "max_weight_kg": None, "min_age": None, "max_age": None}
     return {"body": clean}
@@ -722,11 +946,10 @@ def _intent_for_session(page_type: str, prompt: str) -> str:
     clean = _clean_prompt(prompt)
     if _looks_like_dating_request(clean):
         return "dating_setup"
-    has_team_signal = any(word in clean for word in TEAM_INTENT_KEYWORDS)
     has_trade_signal = any(word in clean for word in TRADE_OBJECT_KEYWORDS)
-    if page_type == "publish" and has_team_signal and not has_trade_signal:
-        return "team_post_create"
-    if page_type == "publish" and has_team_signal and any(word in clean for word in ("前端", "后端", "目标", "人", "同学", "开发")):
+    if looks_like_activity_group(clean) and not has_trade_signal:
+        return "forum_post_create"
+    if page_type == "publish" and looks_like_team_recruitment(clean) and not has_trade_signal:
         return "team_post_create"
     if page_type == "publish" and any(word in clean for word in ("申请加入", "申请组队", "加入这个组队", "帮我申请", "报名这个组队")):
         return "team_apply"
@@ -736,6 +959,8 @@ def _intent_for_session(page_type: str, prompt: str) -> str:
         return "context_chat_message_send"
     if kind == "dating_profile_update":
         return "dating_setup"
+    if page_type == "publish" and not has_trade_signal:
+        return "forum_post_create"
     return kind
 
 
@@ -743,12 +968,25 @@ def _correct_intent_for_prompt(intent: str, page_type: str, prompt: str) -> str:
     clean = _clean_prompt(prompt)
     if _looks_like_dating_request(clean):
         return "dating_setup"
-    has_team_signal = any(word in clean for word in TEAM_INTENT_KEYWORDS)
     has_trade_signal = any(word in clean for word in TRADE_OBJECT_KEYWORDS)
-    if page_type == "publish" and intent == "trade_post_create" and has_team_signal:
-        if not has_trade_signal or any(word in clean for word in ("前端", "后端", "目标", "同学", "开发", "项目")):
-            return "team_post_create"
+    has_recruitment_signal = looks_like_team_recruitment(clean)
+    if intent in {"forum_post_create", "team_post_create"} and looks_like_activity_group(clean) and not has_trade_signal:
+        return "forum_post_create"
+    if page_type == "publish" and has_recruitment_signal and not has_trade_signal:
+        return "team_post_create"
+    if page_type == "publish" and intent == "team_post_create" and not has_recruitment_signal:
+        return "trade_post_create" if has_trade_signal else "forum_post_create"
     return intent
+
+
+def _correct_message_intent_for_session(intent: str, session) -> str:
+    if getattr(session, "page_type", "") != "messages":
+        return intent
+    target_type = _text(getattr(session, "context_target_type", ""))
+    target_id = _text(getattr(session, "context_target_id", ""))
+    if target_type in {"chat_thread", "thread"} and target_id:
+        return "chat_message_send"
+    return "chat_message_batch_send"
 
 
 def _intent_display(intent: str) -> str:
@@ -762,6 +1000,7 @@ def _intent_display(intent: str) -> str:
         "context_chat_message_send": "联系消息",
         "profile_update": "个人资料",
         "chat_message_send": "聊天消息",
+        "chat_message_batch_send": "多人消息",
         "dating_setup": "恋爱匹配资料",
     }
     return mapping.get(intent, "内容草稿")
@@ -776,7 +1015,7 @@ def _intent_target_page(intent: str) -> str:
 
 def _get_required_fields(intent: str) -> list[tuple[str, str]]:
     mapping = {
-        "forum_post_create": [("title", "帖子标题"), ("body", "帖子正文")],
+        "forum_post_create": [("title", "帖子标题"), ("category", "帖子分类"), ("body", "帖子正文")],
         "forum_comment_create": [("post_id", "目标帖子"), ("body", "评论内容")],
         "team_post_create": [("title", "招募标题"), ("summary", "一句话概述"), ("details", "详细说明"), ("target_size", "目标人数")],
         "team_apply": [("post_id", "目标招募"), ("message", "申请留言")],
@@ -785,6 +1024,7 @@ def _get_required_fields(intent: str) -> list[tuple[str, str]]:
         "context_chat_message_send": [("target_user_id", "联系对象"), ("body", "消息内容")],
         "profile_update": [("headline", "一句话介绍"), ("major", "专业"), ("grade", "年级")],
         "chat_message_send": [("thread_id", "聊天对象"), ("body", "消息内容")],
+        "chat_message_batch_send": [("target_user_ids", "收件人"), ("body", "消息内容")],
         "dating_setup": [("bio", "自我介绍"), ("preference", "想认识什么样的人")],
     }
     return mapping.get(intent, [])
@@ -814,8 +1054,6 @@ def _merge_forum_post(payload: dict[str, Any], prompt: str, question_field: str)
     tags = _extract_tag_list(prompt, "标签")
     if tags:
         payload["tags"] = tags
-    if not payload.get("category"):
-        payload["category"] = "校园日常"
 
 
 def _merge_forum_comment(payload: dict[str, Any], prompt: str, question_field: str) -> None:
@@ -875,6 +1113,9 @@ def _merge_trade_post(payload: dict[str, Any], prompt: str, question_field: str)
     price = _extract_trade_price(clean)
     if price is not None:
         payload["price"] = price
+        payload["price_mode"] = "fixed"
+    elif any(word in clean for word in ("面议", "价格面议", "私聊报价")):
+        payload["price_mode"] = "negotiable"
     condition = _extract_trade_condition(prompt)
     if condition:
         payload["condition"] = condition
@@ -922,6 +1163,18 @@ def _merge_chat(payload: dict[str, Any], prompt: str, question_field: str) -> No
     clean = _clean_prompt(prompt)
     if question_field == "body" or not payload.get("body"):
         payload["body"] = clean
+
+
+def _merge_batch_chat(payload: dict[str, Any], prompt: str, question_field: str) -> None:
+    clean = _clean_prompt(prompt)
+    body_match = re.search(r"(?:消息|内容)(?:是|为|：|:)\s*(.+)$", clean)
+    say_match = re.search(r"(?:发消息)?(?:说|告诉(?:他们|大家|对方))\s*(.+)$", clean)
+    if question_field == "body" and clean:
+        payload["body"] = clean
+    elif body_match:
+        payload["body"] = body_match.group(1).strip()
+    elif say_match:
+        payload["body"] = say_match.group(1).strip()
 
 
 def _merge_dating_setup(payload: dict[str, Any], prompt: str, question_field: str) -> None:
@@ -988,6 +1241,8 @@ def _merge_prompt_into_payload(intent: str, payload: dict[str, Any], prompt: str
         _merge_profile(next_payload, prompt, question_field)
     elif intent == "chat_message_send":
         _merge_chat(next_payload, prompt, question_field)
+    elif intent == "chat_message_batch_send":
+        _merge_batch_chat(next_payload, prompt, question_field)
     elif intent == "dating_setup":
         _merge_dating_setup(next_payload, prompt, question_field)
     return next_payload
@@ -1004,11 +1259,9 @@ def _missing_fields(intent: str, payload: dict[str, Any]) -> tuple[list[str], li
             missing.append("bio")
             labels.append("自我介绍")
         preferred_interests = _clean_string_list(preference.get("preferred_interests"), 8)
-        inferred_preferred_interests = _extract_dating_preference_from_prompt(_text(profile.get("bio")))
         preference_ready = bool(
             preference.get("preferred_genders")
             or preferred_interests
-            or inferred_preferred_interests
             or preference.get("min_age")
             or preference.get("max_age")
             or preference.get("min_height_cm")
@@ -1028,6 +1281,9 @@ def _missing_fields(intent: str, payload: dict[str, Any]) -> tuple[list[str], li
             missing.append(field)
             labels.append(label)
         elif field == "title" and len(_text(value)) < 2:
+            missing.append(field)
+            labels.append(label)
+        elif field == "category" and _text(value) not in FORUM_CATEGORIES:
             missing.append(field)
             labels.append(label)
         elif field == "body" and intent == "forum_post_create" and len(_text(value)) < 4:
@@ -1063,6 +1319,9 @@ def _missing_fields(intent: str, payload: dict[str, Any]) -> tuple[list[str], li
             missing.append(field)
             labels.append(label)
         elif field == "thread_id" and not _text(value):
+            missing.append(field)
+            labels.append(label)
+        elif field == "target_user_ids" and not _clean_string_list(value, 20):
             missing.append(field)
             labels.append(label)
         elif field == "body" and intent == "forum_comment_create" and len(_text(value)) < 2:
@@ -1104,7 +1363,8 @@ def _build_blocking_message(intent: str, missing_labels: list[str]) -> str:
 def _normalize_payload(intent: str, payload: dict[str, Any]) -> dict[str, Any]:
     next_payload = deepcopy(payload)
     if intent == "forum_post_create":
-        next_payload["category"] = _text(next_payload.get("category")) or "校园日常"
+        category = _text(next_payload.get("category"))
+        next_payload["category"] = category if category in FORUM_CATEGORIES else ""
         if not _text(next_payload.get("title")) or _text(next_payload.get("title")) == _fallback_title(_text(next_payload.get("body")), "想和大家聊聊这件事"):
             next_payload["title"] = _generate_short_title("论坛帖子", _text(next_payload.get("body")), "想和大家聊聊这件事")
         else:
@@ -1116,14 +1376,17 @@ def _normalize_payload(intent: str, payload: dict[str, Any]) -> dict[str, Any]:
         next_payload["title"] = _ensure_min_text("title", "招募标题", _text(next_payload.get("title")) or _text(next_payload.get("summary")), 4, "想认真找队友一起合作", "组队招募")
         next_payload["summary"] = _ensure_min_text("summary", "一句话概述", _text(next_payload.get("summary")) or _text(next_payload.get("details")), 8, "想找愿意认真推进这件事的同学一起合作。", "组队招募")
         next_payload["details"] = _ensure_min_text("details", "详细说明", _text(next_payload.get("details")) or _text(next_payload.get("summary")), 20, "目前我已经有了明确方向，希望把目标、分工、节奏和合作方式都提前说清楚。", "组队招募")
-        try:
-            next_payload["target_size"] = max(2, min(int(next_payload.get("target_size") or 3), 20))
-        except (TypeError, ValueError):
-            next_payload["target_size"] = 3
+        if next_payload.get("target_size") not in {None, ""}:
+            try:
+                next_payload["target_size"] = max(2, min(int(next_payload["target_size"]), 20))
+            except (TypeError, ValueError):
+                next_payload["target_size"] = None
     elif intent == "trade_post_create":
-        next_payload["post_type"] = _text(next_payload.get("post_type")) or "sell"
-        if next_payload.get("is_negotiable") is None:
-            next_payload["is_negotiable"] = True
+        next_payload["post_type"] = _text(next_payload.get("post_type"))
+        next_payload["price_mode"] = _text(next_payload.get("price_mode"))
+        if next_payload.get("price") not in {None, ""}:
+            next_payload["price_mode"] = "fixed"
+        next_payload["condition"] = _normalize_trade_condition(next_payload.get("condition"))
         if not _text(next_payload.get("title")) or _text(next_payload.get("title")) == _fallback_title(_text(next_payload.get("description")), "想发布一条交易信息"):
             next_payload["title"] = _generate_short_title("交易帖子", _text(next_payload.get("description")), "校园交易信息")
         else:
@@ -1138,6 +1401,10 @@ def _normalize_payload(intent: str, payload: dict[str, Any]) -> dict[str, Any]:
         next_payload["bio"] = _ensure_min_text("bio", "个人简介", _text(next_payload.get("bio")) or _text(next_payload.get("headline")), 12, "我希望把自己的方向、兴趣和想认识的人说清楚，方便后续交流和合作。", "个人资料")
     elif intent == "chat_message_send":
         next_payload["body"] = _ensure_min_text("body", "聊天消息", _text(next_payload.get("body")), 1, "你好，想和你继续聊聊。", "聊天消息")
+    elif intent == "chat_message_batch_send":
+        next_payload["target_user_ids"] = _clean_string_list(next_payload.get("target_user_ids"), 20)
+        next_payload["recipient_names"] = _clean_string_list(next_payload.get("recipient_names"), 20)
+        next_payload["body"] = _ensure_min_text("body", "消息内容", _text(next_payload.get("body")), 1, "你好，想和你同步一条消息。", "多人消息")
     elif intent == "dating_setup":
         next_payload = _repair_dating_payload_from_prompt(next_payload, _text(next_payload.get("profile", {}).get("bio")))
         profile = next_payload.setdefault("profile", {})
@@ -1148,16 +1415,6 @@ def _normalize_payload(intent: str, payload: dict[str, Any]) -> dict[str, Any]:
         )
         if not profile.get("interests"):
             profile["interests"] = _extract_interest_phrase(_text(profile.get("bio")), ("喜欢", "兴趣", "爱好"))[:4]
-        if not preference.get("preferred_interests"):
-            preference["preferred_interests"] = [
-                keyword for keyword in DATING_PREFERENCE_KEYWORDS if keyword in _text(profile.get("bio"))
-            ][:4]
-        if not preference.get("preferred_interests"):
-            preference["preferred_interests"] = _extract_dating_preference_from_prompt(_text(profile.get("bio")))
-        if not preference.get("preferred_interests") and profile.get("interests"):
-            preference["preferred_interests"] = profile.get("interests", [])[:4]
-        if "preferred_genders" not in preference:
-            preference["preferred_genders"] = []
     return next_payload
 
 
@@ -1166,7 +1423,7 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
         return (
             "我先帮你整理出一版可提交的帖子草稿：\n"
             f"标题：{_text(payload.get('title'))}\n"
-            f"分类：{_text(payload.get('category')) or '校园日常'}\n"
+            f"分类：{_text(payload.get('category')) or '未判断'}\n"
             f"正文：{_text(payload.get('body'))}"
         )
     if intent == "forum_comment_create":
@@ -1177,18 +1434,21 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
             f"标题：{_text(payload.get('title'))}\n"
             f"概述：{_text(payload.get('summary'))}\n"
             f"详情：{_text(payload.get('details'))}\n"
-            f"目标人数：{payload.get('target_size') or 3} 人\n"
+            f"目标人数：{(str(payload.get('target_size')) + ' 人') if payload.get('target_size') else '未说明'}\n"
             f"需要技能：{'、'.join(payload.get('required_skills', [])) or '暂未写明'}"
         )
     if intent == "trade_post_create":
+        price_text = f"¥{payload.get('price')}" if payload.get("price") not in {None, ""} else "面议" if payload.get("price_mode") == "negotiable" else "未说明"
+        negotiable = payload.get("is_negotiable")
+        negotiable_text = "可以" if negotiable is True else "不可以" if negotiable is False else "未说明"
         return (
             "我先帮你整理出一版交易帖子草稿：\n"
             f"类型：{TRADE_TYPE_LABELS.get(_text(payload.get('post_type')), '出售')}\n"
             f"标题：{_text(payload.get('title'))}\n"
             f"描述：{_text(payload.get('description'))}\n"
-            f"价格：{('¥' + str(payload.get('price'))) if payload.get('price') not in {None, ''} else '面议'}\n"
-            f"成色：{_text(payload.get('condition')) or '暂未写明'}\n"
-            f"可议价：{'可以' if payload.get('is_negotiable', True) else '不可以'}"
+            f"价格：{price_text}\n"
+            f"成色：{_text(payload.get('condition')) or '无'}\n"
+            f"可议价：{negotiable_text}"
         )
     if intent == "team_apply":
         return f"我先帮你整理出一版组队申请留言：\n申请内容：{_text(payload.get('message'))}"
@@ -1196,6 +1456,14 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
         return "我已经准备好帮你收藏这条交易信息。"
     if intent == "context_chat_message_send":
         return f"我先帮你整理出一版联系消息：\n消息内容：{_text(payload.get('body'))}"
+    if intent == "chat_message_send":
+        return f"我先帮你整理出一版聊天消息：\n消息内容：{_text(payload.get('body'))}"
+    if intent == "chat_message_batch_send":
+        return (
+            "我先帮你整理出一版待发送消息：\n"
+            f"收件人：{'、'.join(payload.get('recipient_names', [])) or '未说明'}\n"
+            f"消息内容：{_text(payload.get('body'))}"
+        )
     if intent == "profile_update":
         return (
             "我先帮你整理出一版个人资料草稿：\n"
@@ -1207,7 +1475,7 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
     if intent == "dating_setup":
         profile = payload.get("profile", {})
         preference = payload.get("preference", {})
-        preferred_gender = "不限" if not preference.get("preferred_genders") else "、".join(preference.get("preferred_genders", []))
+        preferred_gender = "未说明" if not preference.get("preferred_genders") else "、".join(preference.get("preferred_genders", []))
         preferred_interests = "、".join(preference.get("preferred_interests", [])) or "暂未写明"
         return (
             "我先帮你整理出一版恋爱匹配草稿：\n"
@@ -1219,6 +1487,134 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
     return f"我先帮你整理出一版草稿：\n{payload}"
 
 
+PRESENTATION_FIELDS: dict[str, list[tuple[str, str]]] = {
+    "forum_post_create": [("title", "标题"), ("category", "分类"), ("body", "正文"), ("tags", "标签")],
+    "forum_comment_create": [("body", "评论")],
+    "team_post_create": [("title", "标题"), ("summary", "概述"), ("details", "详情"), ("target_size", "目标人数"), ("required_skills", "需要技能"), ("tags", "标签")],
+    "team_apply": [("message", "申请内容")],
+    "trade_post_create": [("post_type", "类型"), ("title", "标题"), ("description", "描述"), ("price", "价格"), ("condition", "成色"), ("is_negotiable", "可议价"), ("tags", "标签")],
+    "context_chat_message_send": [("body", "消息内容")],
+    "chat_message_send": [("body", "消息内容")],
+    "chat_message_batch_send": [("recipient_names", "收件人"), ("body", "消息内容")],
+    "profile_update": [("nickname", "昵称"), ("headline", "一句话介绍"), ("major", "专业"), ("grade", "年级"), ("bio", "个人简介"), ("interests", "兴趣")],
+    "dating_setup": [("profile.bio", "自我介绍"), ("profile.interests", "兴趣"), ("profile.gender", "性别"), ("profile.age", "年龄"), ("profile.height_cm", "身高"), ("profile.weight_kg", "体重"), ("preference.preferred_genders", "偏好性别"), ("preference.preferred_interests", "偏好兴趣")],
+}
+AI_AUTHORED_FIELDS = {"title", "body", "description", "summary", "details", "message", "bio", "headline", "category", "tags", "required_skills"}
+CONTEXT_FIELDS = {"post_id", "thread_id", "target_user_id", "source_id", "source_type"}
+
+
+def _nested_value(payload: dict[str, Any], key: str) -> Any:
+    value: Any = payload
+    for part in key.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def _presentation_display(intent: str, key: str, value: Any, missing: bool) -> str:
+    if key == "condition" and missing:
+        return "无"
+    if missing:
+        return "未说明"
+    if key == "post_type":
+        return TRADE_TYPE_LABELS.get(_text(value), _text(value))
+    if key == "price":
+        return "面议" if value == "面议" else f"¥{value}"
+    if key == "is_negotiable":
+        return "可以" if value is True else "不可以"
+    if isinstance(value, list):
+        return "、".join(_text(item) for item in value if _text(item)) or "未说明"
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    suffix = ""
+    if key == "target_size":
+        suffix = " 人"
+    elif key.endswith("height_cm"):
+        suffix = " cm"
+    elif key.endswith("weight_kg"):
+        suffix = " kg"
+    elif key.endswith("age"):
+        suffix = " 岁"
+    return f"{value}{suffix}"
+
+
+def build_assistant_presentation(state: dict[str, Any], actions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    intent = _text(state.get("intent"))
+    if intent in {"team_recommendations", "dating_recommendations", "trade_recommendations"}:
+        return {"type": "recommendations", "intent": intent, "title": "AI 推荐结果", "fields": [], "missing_fields": [], "suggestions": []}
+    payload = state.get("collected_payload") if isinstance(state.get("collected_payload"), dict) else {}
+    field_specs = PRESENTATION_FIELDS.get(intent, [])
+    if not field_specs:
+        return {"type": "text", "intent": intent, "title": "", "fields": [], "missing_fields": [], "suggestions": []}
+
+    required = {key for key, _label in _get_required_fields(intent)}
+    missing_fields = list(state.get("missing_fields") or [])
+    field_sources = state.get("field_sources") if isinstance(state.get("field_sources"), dict) else {}
+    classification = state.get("classification") if isinstance(state.get("classification"), dict) else {}
+    recipient_options = state.get("recipient_options") if isinstance(state.get("recipient_options"), list) else []
+    fields: list[dict[str, Any]] = []
+    for key, label in field_specs:
+        value = _nested_value(payload, key)
+        if key == "price" and value is None and payload.get("price_mode") == "negotiable":
+            value = "面议"
+        leaf_key = key.rsplit(".", 1)[-1]
+        missing = value in {None, ""} if not isinstance(value, (list, dict)) else not bool(value)
+        if key == "condition" and _text(value) == "无":
+            missing = True
+        if leaf_key == "gender" and _text(value) == "unknown":
+            missing = True
+        inferred_source = "context" if leaf_key in CONTEXT_FIELDS else "ai" if leaf_key in AI_AUTHORED_FIELDS else "user"
+        source = "missing" if missing else _text(field_sources.get(key) or field_sources.get(leaf_key)) or inferred_source
+        entry: dict[str, Any] = {
+            "key": key,
+            "label": label,
+            "value": None if missing else value,
+            "display_value": _presentation_display(intent, key, value, missing),
+            "source": source,
+            "required": key in required or leaf_key in required,
+        }
+        if key == "is_negotiable":
+            entry["options"] = [{"label": "可以", "value": True}, {"label": "不可以", "value": False}]
+        elif key == "category":
+            suggested_categories = [_text(classification.get("category")), *(classification.get("alternatives") or [])]
+            if missing:
+                suggested_categories.extend(("校园日常", "学习交流"))
+            suggested_categories = [
+                category for category in dict.fromkeys(suggested_categories)
+                if category in FORUM_CATEGORIES
+            ][:2]
+            entry["options"] = [{"label": category, "value": category} for category in suggested_categories]
+            entry["custom_prompt"] = "分类改成"
+            entry["hint"] = _text(classification.get("reason"))
+            entry["confidence"] = classification.get("confidence")
+        elif key == "post_type" and missing:
+            entry["options"] = [{"label": "出售", "value": "sell"}, {"label": "求购", "value": "buy"}]
+            entry["custom_prompt"] = "交易类型是"
+        elif key == "condition" and missing:
+            entry["options"] = [
+                {"label": "全新未拆封", "value": "全新未拆封"},
+                {"label": "轻微使用痕迹", "value": "轻微使用痕迹"},
+            ]
+            entry["custom_prompt"] = "成色："
+        elif key == "recipient_names":
+            entry["options"] = [
+                {"label": _text(option.get("label")), "value": _text(option.get("label"))}
+                for option in recipient_options[:2]
+                if isinstance(option, dict) and _text(option.get("label"))
+            ]
+            entry["custom_prompt"] = "收件人："
+        fields.append(entry)
+    return {
+        "type": "draft",
+        "intent": intent,
+        "title": f"{_intent_display(intent)}草稿",
+        "fields": fields,
+        "missing_fields": missing_fields,
+        "suggestions": [],
+    }
+
+
 def _next_question(intent: str, missing_fields: list[str], missing_labels: list[str]) -> tuple[str, str]:
     if not missing_fields:
         return "", ""
@@ -1226,6 +1622,8 @@ def _next_question(intent: str, missing_fields: list[str], missing_labels: list[
     if intent == "forum_post_create":
         if field == "title":
             return "你想把这条帖子起成什么标题？可以直接给我一句话标题。", field
+        if field == "category":
+            return "我还不能可靠判断帖子分类，请从校园日常、学习交流、活动组局、实习求职、项目合作、组队招募或情绪树洞中选一个。", field
         return "你想重点写哪些背景、问题和诉求？可以直接把正文思路发给我。", field
     if intent == "forum_comment_create":
         return "你想评论什么内容？可以直接把评论发给我。", field
@@ -1265,6 +1663,10 @@ def _next_question(intent: str, missing_fields: list[str], missing_labels: list[
         if field == "thread_id":
             return "当前我还不知道你具体要发给哪个聊天对象。你可以先进入具体聊天页，或者告诉我你想发的消息内容，我先帮你润色。", field
         return "你可以直接把想发出的消息内容告诉我。", field
+    if intent == "chat_message_batch_send":
+        if field == "target_user_ids":
+            return "你想发给谁？可以选择最近联系人，或者输入昵称、姓名或 CampusClaw ID；多人请用顿号分隔。", field
+        return "你想发送什么内容？我会先整理成待发送卡片，确认后再发送。", field
     if intent == "dating_setup":
         if field == "bio":
             return "先告诉我你希望别人怎么认识你吧。你可以用 1 到 2 句话介绍自己的性格、兴趣和相处方式。", field
@@ -1298,7 +1700,17 @@ def _payload_for_kind(intent: str, payload: dict[str, Any], kind: str) -> dict[s
 
 def _build_fill_payload(kind: str, payload: dict[str, Any]) -> dict[str, Any]:
     skill = SKILLS[kind]
-    return {key: payload.get(key) for key in skill.fill_keys if key in payload}
+    fill_payload: dict[str, Any] = {}
+    for key in skill.fill_keys:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if value is None or value == "" or value == []:
+            continue
+        if key == "gender" and value == "unknown":
+            continue
+        fill_payload[key] = value
+    return fill_payload
 
 
 def _build_preview_entry(kind: str, payload: dict[str, Any]) -> dict[str, str]:
@@ -1319,6 +1731,9 @@ def build_action_proposals_from_intent(user, session, message, intent: str, payl
     for kind in _action_kinds_for_intent(intent):
         skill = SKILLS[kind]
         kind_payload = _payload_for_kind(intent, payload, kind)
+        action_presentation = build_assistant_presentation(
+            {"intent": intent, "collected_payload": payload, "missing_fields": []}
+        )
         proposal_data.append(
             {
                 "user": user,
@@ -1329,7 +1744,7 @@ def build_action_proposals_from_intent(user, session, message, intent: str, payl
                 "target_page": skill.target_page,
                 "payload": kind_payload,
                 "fill_payload": _build_fill_payload(kind, kind_payload),
-                "preview": _build_preview_entry(kind, kind_payload),
+                "preview": {**_build_preview_entry(kind, kind_payload), "fields": action_presentation.get("fields", [])},
                 "expires_at": timezone.now() + timedelta(hours=2),
             }
         )
@@ -1449,6 +1864,42 @@ def _merge_payload_patch(payload: dict[str, Any], patch: dict[str, Any]) -> dict
     return next_payload
 
 
+def _preserve_trade_price_when_unmentioned(
+    base_payload: dict[str, Any],
+    payload: dict[str, Any],
+    prompt: str,
+) -> dict[str, Any]:
+    clean = _clean_prompt(prompt)
+    mentions_price = _extract_trade_price(clean) is not None or any(
+        word in clean for word in ("面议", "价格面议", "私聊报价", "固定价格", "定价")
+    )
+    if mentions_price:
+        return payload
+
+    next_payload = deepcopy(payload)
+    for key in ("price", "price_mode"):
+        if key in base_payload:
+            next_payload[key] = deepcopy(base_payload.get(key))
+        else:
+            next_payload.pop(key, None)
+    return next_payload
+
+
+def _repair_trade_price_after_negotiability_reply(
+    payload: dict[str, Any],
+    prompt: str,
+    fact_context: str,
+) -> dict[str, Any]:
+    next_payload = deepcopy(payload)
+    is_negotiability_reply = _extract_negotiable(prompt) is not None
+    has_explicit_face_price = any(word in fact_context for word in ("面议", "价格面议", "私聊报价"))
+    has_fixed_price = next_payload.get("price") not in {None, ""}
+    if is_negotiability_reply and not has_explicit_face_price and not has_fixed_price:
+        next_payload["price"] = None
+        next_payload["price_mode"] = ""
+    return next_payload
+
+
 def _clean_string_list(value: Any, limit: int = 8) -> list[str]:
     if isinstance(value, list):
         raw_items = value
@@ -1467,6 +1918,41 @@ def _coerce_optional_float(value: Any) -> float | None:
         return None
 
 
+def _coerce_optional_bool(value: Any) -> bool | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in {0, 1}:
+        return bool(value)
+    normalized = _text(value).lower()
+    if normalized in {"true", "yes", "1", "可以", "可议价"}:
+        return True
+    if normalized in {"false", "no", "0", "不可以", "不议价"}:
+        return False
+    return None
+
+
+def _normalize_trade_condition(value: Any) -> str:
+    condition = _text(value)
+    if not condition:
+        return "无"
+    if condition.lower() in {
+        "unknown",
+        "unspecified",
+        "none",
+        "n/a",
+        "new",
+        "used",
+        "like new",
+        "good",
+        "fair",
+        "poor",
+    }:
+        return "无"
+    return condition[:40]
+
+
 def _postprocess_generated_patch(intent: str, patch: dict[str, Any]) -> dict[str, Any]:
     clean = deepcopy(patch)
     if intent == "forum_post_create":
@@ -1474,10 +1960,15 @@ def _postprocess_generated_patch(intent: str, patch: dict[str, Any]) -> dict[str
             clean.pop("category", None)
         if "tags" in clean:
             clean["tags"] = _clean_string_list(clean.get("tags"), 6)
+    elif intent == "chat_message_batch_send":
+        if "target_user_ids" in clean:
+            clean["target_user_ids"] = _clean_string_list(clean.get("target_user_ids"), 20)
+        if "recipient_names" in clean:
+            clean["recipient_names"] = _clean_string_list(clean.get("recipient_names"), 20)
     elif intent == "team_post_create":
         if "target_size" in clean:
             try:
-                clean["target_size"] = max(2, min(int(clean.get("target_size") or 3), 20))
+                clean["target_size"] = max(2, min(int(clean["target_size"]), 20))
             except (TypeError, ValueError):
                 clean.pop("target_size", None)
         if "tags" in clean:
@@ -1487,10 +1978,14 @@ def _postprocess_generated_patch(intent: str, patch: dict[str, Any]) -> dict[str
     elif intent == "trade_post_create":
         if _text(clean.get("post_type")) not in {"sell", "buy", "exchange", "service"}:
             clean.pop("post_type", None)
+        if "condition" in clean:
+            clean["condition"] = _normalize_trade_condition(clean.get("condition"))
         if "price" in clean:
             clean["price"] = _coerce_optional_float(clean.get("price"))
+        if _text(clean.get("price_mode")) not in {"fixed", "negotiable"}:
+            clean.pop("price_mode", None)
         if "is_negotiable" in clean:
-            clean["is_negotiable"] = bool(clean.get("is_negotiable"))
+            clean["is_negotiable"] = _coerce_optional_bool(clean.get("is_negotiable"))
         if "tags" in clean:
             clean["tags"] = _clean_string_list(clean.get("tags"), 6)
     elif intent == "dating_setup":
@@ -1525,11 +2020,68 @@ def _postprocess_generated_patch(intent: str, patch: dict[str, Any]) -> dict[str
     return clean
 
 
+def _resolve_forum_category(
+    payload: dict[str, Any],
+    prompt: str,
+    fact_context: str,
+    state: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    next_payload = deepcopy(payload)
+    explicit = explicit_forum_category(prompt)
+    previous = state.get("classification") if isinstance(state.get("classification"), dict) else {}
+    previous_category = _text(previous.get("category"))
+    previous_source = _text(previous.get("source"))
+
+    if explicit:
+        decision = classify_forum_category(explicit)
+        next_payload["category"] = explicit
+        return next_payload, {**decision, "source": "user"}, "user"
+
+    if previous_source == "user" and previous_category in FORUM_CATEGORIES:
+        next_payload["category"] = previous_category
+        return next_payload, deepcopy(previous), "user"
+
+    classification_text = "\n".join(
+        item for item in (
+            fact_context,
+            _text(next_payload.get("title")),
+            _text(next_payload.get("body")),
+        ) if item
+    )
+    rule_decision = classify_forum_category(classification_text)
+    model_category = _text(next_payload.get("category"))
+    if rule_decision["category"] and rule_decision["confidence"] >= 0.8:
+        next_payload["category"] = rule_decision["category"]
+        return next_payload, {**rule_decision, "source": "ai"}, "ai"
+
+    if model_category in FORUM_CATEGORIES and len(_clean_prompt(fact_context)) >= 4:
+        alternatives = list(rule_decision.get("alternatives") or [])
+        if rule_decision.get("category") and rule_decision["category"] != model_category:
+            alternatives.insert(0, rule_decision["category"])
+        alternatives = [item for item in dict.fromkeys(alternatives) if item != model_category][:2]
+        decision = {
+            "category": model_category,
+            "confidence": 0.72,
+            "reason": "AI 根据帖子完整语义作出的分类判断",
+            "alternatives": alternatives,
+            "source": "ai",
+        }
+        return next_payload, decision, "ai"
+
+    next_payload.pop("category", None)
+    decision = {
+        "category": "",
+        "confidence": rule_decision.get("confidence", 0.0),
+        "reason": rule_decision.get("reason") or "内容中没有足够的分类依据",
+        "alternatives": [],
+        "source": "missing",
+    }
+    return next_payload, decision, "missing"
+
+
 def _correct_payload_for_prompt(intent: str, payload: dict[str, Any], prompt: str) -> dict[str, Any]:
     clean_payload = deepcopy(payload)
     clean_prompt = _clean_prompt(prompt)
-    if intent == "forum_post_create" and any(word in clean_prompt for word in STUDY_CATEGORY_KEYWORDS):
-        clean_payload["category"] = "学习交流"
     if intent == "team_post_create" and not clean_payload.get("target_size"):
         target_size = _extract_team_target_size(clean_prompt)
         if target_size is not None:
@@ -1552,10 +2104,12 @@ def _correct_payload_for_prompt(intent: str, payload: dict[str, Any], prompt: st
             price = _extract_trade_price(clean_prompt)
             if price is not None:
                 clean_payload["price"] = price
-        if not _text(clean_payload.get("condition")):
-            condition = _extract_trade_condition(clean_prompt)
-            if condition:
-                clean_payload["condition"] = condition
+                clean_payload["price_mode"] = "fixed"
+            elif any(word in clean_prompt for word in ("面议", "价格面议", "私聊报价")):
+                clean_payload["price_mode"] = "negotiable"
+        condition = _extract_trade_condition(clean_prompt)
+        if condition:
+            clean_payload["condition"] = condition
         negotiable = _extract_negotiable(clean_prompt)
         if negotiable is not None:
             clean_payload["is_negotiable"] = negotiable
@@ -1603,6 +2157,7 @@ def _ensure_generated_payload(intent: str, payload: dict[str, Any], source_promp
             "我会把物品状态、价格预期和校内交易方式说明清楚，方便有需要的同学联系。",
             "交易帖子",
         )
+        next_payload["description"] = _refresh_trade_description(next_payload["description"], next_payload, source_prompt)
     elif intent == "profile_update":
         next_payload["bio"] = _ensure_generated_text(
             "bio",
@@ -1702,6 +2257,7 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
         "context_path": getattr(session, "context_path", ""),
         "context_target_type": getattr(session, "context_target_type", ""),
         "context_target_id": getattr(session, "context_target_id", ""),
+        "message_recipients": _message_recipient_candidates(getattr(session, "user", None)),
     }
     instructions = {
         "allowed_intents": sorted(AGENT_ALLOWED_INTENTS),
@@ -1713,10 +2269,12 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "profile": sorted(AGENT_DATING_PROFILE_FIELDS),
             "preference": sorted(AGENT_DATING_PREFERENCE_FIELDS),
         },
+        "forum_category_guidance": FORUM_CATEGORY_GUIDANCE,
         "policy": [
             "确认语义：不用调整了、不用改了、不需要修改、无需调整、没问题不用改，都表示用户认可当前草稿，应归类为 confirm_draft。",
-            "意图纠偏：用户说做小程序、项目、需要前端/后端/队友/目标人数时，通常是 team_post_create；即使项目主题包含“交易”二字，也不是 trade_post_create。",
-            "论坛分类纠偏：复习、高数、考试、自习、图书馆、课程、作业等学习场景，category 应为“学习交流”。",
+            "意图和分类分开判断：明确找成员、缺角色、招队友才是 team_post_create；分享项目经验、讨论技术方案属于 forum_post_create 的“项目合作”。",
+            "普通问候、闲聊或信息不足的输入不要强行生成帖子，应自然回复或追问用户想做什么。",
+            "论坛分类必须依据 forum_category_guidance 的语义边界；不确定时不要用“校园日常”兜底。",
             "新规则优先：AI 只判断用户是否想生成或确认；后端会根据字段完整且用户已确认当前草稿来决定是否允许弹卡片。",
             "执行成卡片、生成卡片、弹卡片、变成卡片、出卡片、就按这个来、好的、嗯嗯，都属于 confirm_draft 或 request_generate。",
             "如果当前还没有展示过草稿，即使用户说直接生成卡片，也不要要求 should_create_actions=true；先让后端展示草稿等待确认。",
@@ -1725,6 +2283,8 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "信息不足时 flow=collecting，并在 assistant_reply 里自然追问一个最重要的问题。",
             "用户要求改标题、改语气、短一点、自然一点等属于 request_revision，不要生成动作卡片。",
             "不要编造 post_id、thread_id、target_user_id；这些上下文 ID 只能来自 current_context。",
+            "消息页没有指定会话时使用 chat_message_batch_send；target_user_ids 只能从 current_context.message_recipients 选择。支持一个或多个收件人。",
+            "不要替用户决定价格、是否议价、人数、年龄、身高、体重、性别、可见性或匹配偏好；未提供时保持缺失。",
             "dating_setup 可以在 action_intents 中同时返回 dating_profile_update 和 dating_preference_update。",
             "当 flow=confirming 且 should_create_actions=false 时，assistant_reply 只写确认问题或修改建议，不要重复完整草稿，后端会自动展示草稿预览。",
             "assistant_reply 用中文，简洁自然；只输出 JSON，不要 Markdown，不要解释。",
@@ -1776,12 +2336,27 @@ def _build_payload_generation_messages(
         "context_path": getattr(session, "context_path", ""),
         "context_target_type": getattr(session, "context_target_type", ""),
         "context_target_id": getattr(session, "context_target_id", ""),
+        "message_recipients": _message_recipient_candidates(getattr(session, "user", None)),
     }
     schema = {
         "intent": intent,
         "allowed_fields": sorted(AGENT_PAYLOAD_FIELDS.get(intent, set())),
         "forum_categories": list(FORUM_CATEGORIES),
+        "forum_category_guidance": FORUM_CATEGORY_GUIDANCE,
         "trade_post_types": ["sell", "buy", "exchange", "service"],
+        "field_guidance": {
+            "description": (
+                "只能改写用户明确说过的商品事实。不得擅自添加功能正常、无损坏、使用流畅、续航良好、"
+                "价格可商议等信息；未提供的价格、成色、功能和外观状态只能保持未说明，不能写进描述。"
+            ),
+            "condition": (
+                "商品的新旧程度和实际使用状况。根据用户自然表达提炼为简短中文，"
+                "例如全新未拆封、接近全新、轻微使用痕迹、有明显划痕但功能正常；"
+                "不得输出 used、new、good 等英文分类值，用户没有提供相关信息时填“无”。"
+            ),
+            "price_mode": "用户明确给出数字价格时为 fixed；明确说面议时为 negotiable；没说时留空。",
+            "is_negotiable": "仅在用户明确表达可议价或不议价时填写 true 或 false，没说时必须为 null。",
+        } if intent == "trade_post_create" else {},
         "dating_nested_fields": {
             "profile": sorted(AGENT_DATING_PROFILE_FIELDS),
             "preference": sorted(AGENT_DATING_PREFERENCE_FIELDS),
@@ -1796,9 +2371,15 @@ def _build_payload_generation_messages(
                 "不要机械复制用户原话；标题要自然、具体、适合校园社区。"
                 "正文、详情、摘要、自我介绍要在不编造关键事实的前提下扩写到可提交程度。"
                 "分类、交易类型、标签、技能由你判断，但必须使用 schema 允许的值。"
-                "复习、高数、考试、自习、图书馆、课程、作业等学习场景，论坛分类必须选“学习交流”。"
-                "做小程序/项目、需要前端或后端、目标人数、找同学开发，属于组队招募，不要当成交易帖子。"
+                "论坛分类要依据 forum_category_guidance：校园日常不是默认分类；项目经验分享属于项目合作，"
+                "明确找成员才属于组队招募；活动邀请要和普通校园见闻区分。没有足够依据时 category 留空。"
+                "交易帖子里的 condition 只表示商品成色或使用状况，要结合当前回复和历史对话提炼，"
+                "保留用户明确表达的信息，不要套固定档位，不要翻译成英文枚举；没有依据时填“无”。"
+                "价格、是否议价、人数、年龄、身高、体重、性别、可见性和匹配偏好都是用户事实，"
+                "用户没说时保持 null、空字符串或缺省，不得用常见默认值替用户决定。"
+                "明确需要前端或后端、说明目标人数、找同学开发，属于组队招募，不要当成交易帖子。"
                 "恋爱资料不能编造用户没说过的年龄、身高、体重、性别等事实。"
+                "生成多人消息时，只能从 current_context.message_recipients 中选择 target_user_ids；没有明确收件人时保持空数组。"
                 "只输出 JSON object，不要 Markdown，不要解释。"
             ),
         },
@@ -1862,7 +2443,10 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
     decision = call_agent_json(_build_agent_decision_messages(session, clean_prompt, state, history), "assistant_turn_decision")
     _validate_agent_decision(decision)
 
-    intent = _correct_intent_for_prompt(_text(decision["intent"]), session.page_type, clean_prompt)
+    intent = _correct_message_intent_for_session(
+        _correct_intent_for_prompt(_text(decision["intent"]), session.page_type, clean_prompt),
+        session,
+    )
     previous_intent = _text(state.get("intent"))
     base_payload = deepcopy(state.get("collected_payload") or {})
     if not base_payload or (previous_intent and previous_intent != intent and decision["user_signal"] == "new_request"):
@@ -1878,14 +2462,34 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
     if not patch:
         patch = _postprocess_generated_patch(intent, _sanitize_payload_patch(intent, decision.get("payload_patch")))
     payload = _merge_payload_patch(base_payload, patch)
+    if intent == "chat_message_batch_send" and "添加" in clean_prompt:
+        payload["target_user_ids"] = list(dict.fromkeys([
+            *_clean_string_list(base_payload.get("target_user_ids"), 20),
+            *_clean_string_list(payload.get("target_user_ids"), 20),
+        ]))[:20]
+    if intent == "trade_post_create":
+        payload = _preserve_trade_price_when_unmentioned(base_payload, payload, clean_prompt)
     if not patch and signal not in {"confirm_draft", "request_generate", "self_fill", "cancel"}:
         payload = _merge_prompt_into_payload(intent, payload, clean_prompt, _text(state.get("question_field")))
     payload = _correct_payload_for_prompt(intent, payload, clean_prompt)
     if intent == "dating_setup":
         payload = _repair_dating_payload_from_prompt(payload, clean_prompt)
+    fact_context = _user_fact_context(history, clean_prompt)
+    if intent == "trade_post_create":
+        payload = _repair_trade_price_after_negotiability_reply(payload, clean_prompt, fact_context)
     if not _is_payload_generation_control_signal(signal, clean_prompt, state, intent):
-        payload = _ensure_generated_payload(intent, payload, clean_prompt)
+        payload = _ensure_generated_payload(intent, payload, fact_context)
     payload = _apply_session_context(intent, payload, session)
+    recipient_options: list[dict[str, str]] = []
+    if intent == "chat_message_batch_send":
+        payload, recipient_options = _resolve_batch_recipients(user, payload, clean_prompt)
+    classification: dict[str, Any] = {}
+    field_sources = deepcopy(state.get("field_sources") or {})
+    if intent == "chat_message_batch_send" and payload.get("target_user_ids"):
+        field_sources["recipient_names"] = "user"
+    if intent == "forum_post_create":
+        payload, classification, category_source = _resolve_forum_category(payload, clean_prompt, fact_context, state)
+        field_sources["category"] = category_source
     normalized_payload = _normalize_payload(intent, payload)
     if intent == "dating_setup":
         normalized_payload = _repair_dating_payload_from_prompt(normalized_payload, clean_prompt)
@@ -1913,6 +2517,9 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
             "missing_fields": missing_fields,
             "missing_field_labels": missing_labels,
             "question_field": missing_fields[0] if missing_fields else "",
+            "classification": classification,
+            "field_sources": field_sources,
+            "recipient_options": recipient_options,
         }
     )
 
@@ -1949,6 +2556,14 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
 
 
 def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
+    current_state = _normalize_state(getattr(session, "state", None))
+    if _is_standalone_greeting(prompt) and current_state.get("flow") == "idle":
+        return (
+            "你好，我在。你可以让我写论坛帖子、整理闲置、推荐组队，或者生成一段开场白。",
+            [],
+            current_state,
+        )
+
     recommendation_result = build_recommendation_action(user, session, prompt)
     if recommendation_result:
         return recommendation_result
@@ -1980,7 +2595,14 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
     if not clean_prompt:
         return "你可以直接告诉我你想处理什么，我会先帮你梳理信息，再决定要不要生成动作建议。", [], state
 
-    intent = _correct_intent_for_prompt(state.get("intent") or _intent_for_session(session.page_type, clean_prompt), session.page_type, clean_prompt)
+    intent = _correct_message_intent_for_session(
+        _correct_intent_for_prompt(
+            state.get("intent") or _intent_for_session(session.page_type, clean_prompt),
+            session.page_type,
+            clean_prompt,
+        ),
+        session,
+    )
     wants_generate = _wants_generate(clean_prompt)
     wants_self_fill = _wants_self_fill(clean_prompt)
     is_short_confirmation = _is_short_confirmation(clean_prompt)
@@ -2001,10 +2623,26 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
         payload = _correct_payload_for_prompt(intent, payload, clean_prompt)
         if intent == "dating_setup":
             payload = _repair_dating_payload_from_prompt(payload, clean_prompt)
-        payload = _ensure_generated_payload(intent, payload, clean_prompt)
+        fact_context = _user_fact_context(history, clean_prompt)
+        payload = _ensure_generated_payload(intent, payload, fact_context)
+    else:
+        fact_context = _user_fact_context(history, clean_prompt)
 
-    missing_fields, missing_labels = _missing_fields(intent, payload)
+    if intent == "trade_post_create":
+        payload = _repair_trade_price_after_negotiability_reply(payload, clean_prompt, fact_context)
+
+    classification: dict[str, Any] = {}
+    field_sources = deepcopy(state.get("field_sources") or {})
+    if intent == "forum_post_create":
+        payload, classification, category_source = _resolve_forum_category(payload, clean_prompt, fact_context, state)
+        field_sources["category"] = category_source
+    recipient_options: list[dict[str, str]] = []
+    if intent == "chat_message_batch_send":
+        payload, recipient_options = _resolve_batch_recipients(user, payload, clean_prompt)
+        if payload.get("target_user_ids"):
+            field_sources["recipient_names"] = "user"
     normalized_payload = _normalize_payload(intent, payload)
+    missing_fields, missing_labels = _missing_fields(intent, normalized_payload)
     if intent == "dating_setup":
         normalized_payload = _repair_dating_payload_from_prompt(normalized_payload, clean_prompt)
         missing_fields, missing_labels = _missing_fields(intent, normalized_payload)
@@ -2026,6 +2664,9 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
             "collected_payload": normalized_payload,
             "missing_fields": missing_fields,
             "missing_field_labels": missing_labels,
+            "classification": classification,
+            "field_sources": field_sources,
+            "recipient_options": recipient_options,
         }
     )
 

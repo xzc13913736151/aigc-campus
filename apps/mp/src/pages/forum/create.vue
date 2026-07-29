@@ -134,6 +134,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import CachedImage from '../../components/CachedImage.vue'
+import { FORUM_CATEGORIES } from '../../constants/forum'
 import { createForumPost, fetchForumPostDetail, updateForumPost, uploadForumPostImage } from '../../services/forum'
 import { consumeAssistantDraft } from '../../utils/assistantDraft'
 import { chooseImagePaths } from '../../utils/image'
@@ -143,7 +144,7 @@ import { showToast } from '../../utils/ui'
 
 const ACCESS_TOKEN_KEY = 'pairup.access-token'
 const CURRENT_USER_KEY = 'pairup.current-user'
-const categories = ['校园日常', '学习交流', '活动组局', '实习求职', '项目合作', '组队招募', '情绪树洞']
+const categories = [...FORUM_CATEGORIES]
 const hasToken = ref(isLoggedIn())
 const submitting = ref(false)
 const loading = ref(false)

@@ -6,13 +6,16 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Callable
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from chat.models import ChatMessage, ChatThread
+from chat.services import notify_chat_counterpart, push_chat_message, push_thread_snapshot
 from dating.models import DatingPreference, DatingProfile, DatingSignal
 from forum.models import ForumComment, ForumCommentLike, ForumPost, ForumPostLike
+from forum.categories import FORUM_CATEGORIES
 from moderation.services import is_blocked_pair
 from profiles.serializers import ProfileSerializer
 from teammates.models import TeamApplication, TeamPost
@@ -66,6 +69,13 @@ def _optional_decimal(value: Any, label: str) -> Decimal | None:
         raise ValidationError(f"{label}格式不正确")
 
 
+def _required_bool(payload: dict[str, Any], key: str, label: str) -> bool:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    raise ValidationError(f"请先明确{label}")
+
+
 def _preview(title: str, body: str, action: str) -> dict[str, str]:
     return {"action": action, "title": title, "body": body}
 
@@ -78,14 +88,30 @@ def _canonical_thread_users(first, second):
     return (first, second) if str(first.id) < str(second.id) else (second, first)
 
 
+def _run_best_effort(callback, *args) -> None:
+    try:
+        callback(*args)
+    except Exception:
+        return
+
+
+def _publish_sent_message(thread: ChatThread, message: ChatMessage) -> None:
+    _run_best_effort(notify_chat_counterpart, thread, message)
+    _run_best_effort(push_chat_message, message)
+    _run_best_effort(push_thread_snapshot, thread)
+
+
 def execute_forum_post_create(user, payload: dict[str, Any]) -> dict[str, Any]:
     title = _required_text(payload, "title", "帖子标题", 4)
     body = _required_text(payload, "body", "帖子正文", 10)
+    category = _required_text(payload, "category", "帖子分类", 4)
+    if category not in FORUM_CATEGORIES:
+        raise ValidationError("请选择有效的帖子分类")
     post = ForumPost.objects.create(
         author=user,
         title=title[:160],
         body=body,
-        category=_text(payload.get("category"), "校园日常")[:80],
+        category=category,
         tags=_list(payload.get("tags")),
     )
     return _result(f"/pages/forum/detail?id={post.id}", "帖子已发布", id=str(post.id))
@@ -158,7 +184,7 @@ def execute_trade_post_create(user, payload: dict[str, Any]) -> dict[str, Any]:
         price=_optional_decimal(payload.get("price"), "价格"),
         condition=_text(payload.get("condition"))[:40],
         tags=_list(payload.get("tags")),
-        is_negotiable=bool(payload.get("is_negotiable", True)),
+        is_negotiable=_required_bool(payload, "is_negotiable", "是否可议价"),
     )
     return _result("/pages/trade/index", "交易帖子已发布", id=str(post.id))
 
@@ -197,6 +223,7 @@ def execute_context_chat_message_send(user, payload: dict[str, Any]) -> dict[str
     thread.hidden_for_user_a = False
     thread.hidden_for_user_b = False
     thread.save(update_fields=["source_type", "source_id", "updated_at", "hidden_for_user_a", "hidden_for_user_b"])
+    transaction.on_commit(lambda: _publish_sent_message(thread, message))
     return _result(
         f"/pages/chat/index?threadId={thread.id}",
         "消息已发送并已建立会话",
@@ -265,7 +292,51 @@ def execute_chat_message_send(user, payload: dict[str, Any]) -> dict[str, Any]:
     thread.hidden_for_user_a = False
     thread.hidden_for_user_b = False
     thread.save(update_fields=["updated_at", "hidden_for_user_a", "hidden_for_user_b"])
+    transaction.on_commit(lambda: _publish_sent_message(thread, message))
     return _result(f"/pages/chat/index?threadId={thread.id}", "消息已发送", id=str(message.id), thread_id=str(thread.id))
+
+
+def execute_chat_message_batch_send(user, payload: dict[str, Any]) -> dict[str, Any]:
+    target_ids = list(dict.fromkeys(_list(payload.get("target_user_ids"))))[:20]
+    if not target_ids:
+        raise ValidationError("请先选择至少一位收件人")
+    body = _required_text(payload, "body", "消息内容", 1)
+    targets = {str(item.id): item for item in User.objects.filter(id__in=target_ids, is_active=True)}
+    if len(targets) != len(target_ids):
+        raise ValidationError("部分收件人不存在或已不可用，请重新选择")
+
+    ordered_targets = [targets[target_id] for target_id in target_ids]
+    for target in ordered_targets:
+        if target.id == user.id:
+            raise ValidationError("不能给自己发消息")
+        if is_blocked_pair(user, target):
+            raise PermissionDenied("部分收件人当前无法联系，请重新选择")
+
+    sent: list[tuple[ChatThread, ChatMessage]] = []
+    with transaction.atomic():
+        for target in ordered_targets:
+            user_a, user_b = _canonical_thread_users(user, target)
+            thread, _ = ChatThread.objects.get_or_create(
+                user_a=user_a,
+                user_b=user_b,
+                defaults={"source_type": "assistant_batch", "source_id": ""},
+            )
+            message = ChatMessage.objects.create(thread=thread, sender=user, body=body)
+            thread.updated_at = timezone.now()
+            thread.hidden_for_user_a = False
+            thread.hidden_for_user_b = False
+            thread.save(update_fields=["updated_at", "hidden_for_user_a", "hidden_for_user_b"])
+            sent.append((thread, message))
+        transaction.on_commit(lambda: [_publish_sent_message(thread, message) for thread, message in sent])
+
+    names = [target.nickname or target.full_name or target.claw_id for target in ordered_targets]
+    return _result(
+        "/pages/messages/index",
+        f"消息已发送给 {len(sent)} 位联系人",
+        sent_count=len(sent),
+        recipient_names=names,
+        message_ids=[str(message.id) for _thread, message in sent],
+    )
 
 
 def execute_profile_update(user, payload: dict[str, Any]) -> dict[str, Any]:
@@ -283,13 +354,14 @@ SKILLS: dict[str, Skill] = {
     "forum_comment_like": Skill("forum_comment_like", "点赞评论", "/pages/forum/detail", ("comment_id",), execute_forum_comment_like),
     "team_post_create": Skill("team_post_create", "发布组队招募", "/pages/teammates/create", ("title", "summary", "details", "target_size", "tags", "required_skills"), execute_team_post_create),
     "team_apply": Skill("team_apply", "申请加入组队", "/pages/teammates/index", ("post_id", "message"), execute_team_apply),
-    "trade_post_create": Skill("trade_post_create", "发布交易帖子", "/pages/trade/create", ("title", "description", "price", "post_type", "condition", "tags", "is_negotiable"), execute_trade_post_create),
+    "trade_post_create": Skill("trade_post_create", "发布交易帖子", "/pages/trade/create", ("title", "description", "price", "price_mode", "post_type", "condition", "tags", "is_negotiable"), execute_trade_post_create),
     "trade_favorite": Skill("trade_favorite", "收藏交易帖子", "/pages/trade/index", ("post_id",), execute_trade_favorite),
     "context_chat_message_send": Skill("context_chat_message_send", "联系对方并发送消息", "/pages/chat/index", ("target_user_id", "source_type", "source_id", "body"), execute_context_chat_message_send),
     "dating_profile_update": Skill("dating_profile_update", "保存恋爱展示资料", "/pages/dating/index", ("nickname", "gender", "height_cm", "weight_kg", "age", "interests", "bio", "is_visible"), execute_dating_profile_update),
     "dating_preference_update": Skill("dating_preference_update", "保存匹配偏好", "/pages/dating/index", ("preferred_genders", "preferred_interests", "min_height_cm", "max_height_cm", "min_weight_kg", "max_weight_kg", "min_age", "max_age"), execute_dating_preference_update),
     "dating_signal": Skill("dating_signal", "发送匹配信号", "/pages/dating/index", ("target_user_id", "signal"), execute_dating_signal),
     "chat_message_send": Skill("chat_message_send", "发送聊天消息", "/pages/chat/index", ("thread_id", "body"), execute_chat_message_send),
+    "chat_message_batch_send": Skill("chat_message_batch_send", "发送多人消息", "/pages/messages/index", ("target_user_ids", "recipient_names", "body"), execute_chat_message_batch_send),
     "profile_update": Skill("profile_update", "保存个人资料", "/pages/profile/index", ("nickname", "headline", "bio", "gender", "major", "grade", "interests"), execute_profile_update),
 }
 
@@ -325,7 +397,7 @@ def build_action_payload(kind: str, prompt: str, session) -> dict[str, Any]:
     short = clean[:80] or "来自 AI 的内容"
     common_tags = ["AI生成"]
     payloads = {
-        "forum_post_create": {"title": short[:36], "body": clean, "category": "校园日常", "tags": common_tags},
+        "forum_post_create": {"title": short[:36], "body": clean, "category": "", "tags": common_tags},
         "forum_comment_create": {"post_id": session.context_target_id, "parent": "", "body": clean},
         "forum_post_like": {"post_id": session.context_target_id},
         "forum_comment_like": {"comment_id": session.context_target_id},
@@ -379,4 +451,13 @@ def execute_action(proposal) -> dict[str, Any]:
     skill = SKILLS.get(proposal.kind)
     if not skill:
         raise ValidationError("不支持的 AI 动作")
+    if proposal.kind not in {
+        "forum_post_like",
+        "forum_comment_like",
+        "trade_favorite",
+        "context_chat_message_send",
+        "chat_message_send",
+        "chat_message_batch_send",
+    }:
+        raise ValidationError("这类内容需要先填入原页面，由你检查后手动提交")
     return skill.execute(proposal.user, proposal.payload)

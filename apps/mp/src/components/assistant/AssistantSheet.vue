@@ -55,14 +55,20 @@
               :id="`assistant-message-${message.id}`"
               :key="message.id"
               class="assistant-message"
-              :class="{ mine: message.role === 'user' }"
+              :class="{ mine: message.role === 'user', structured: message.role === 'assistant' && message.presentation?.type === 'draft' }"
             >
               <view class="assistant-message-head">
                 <text class="assistant-role">{{ message.role === 'user' ? '我' : 'AI 助手' }}</text>
                 <text class="assistant-time">{{ formatDate(message.created_at) }}</text>
               </view>
               <view style="height: 8rpx" />
-              <text v-if="message.role === 'user'" class="assistant-copy">{{ message.body }}</text>
+              <AssistantPresentationCard
+                v-if="message.role === 'assistant' && message.presentation?.type === 'draft'"
+                :presentation="message.presentation"
+                @suggest="handleSuggestion"
+                @custom="handleCustomField"
+              />
+              <text v-else-if="message.role === 'user'" class="assistant-copy">{{ message.body }}</text>
               <AssistantMarkdown v-else :content="message.body" />
             </view>
 
@@ -94,9 +100,9 @@
                 :key="action.id"
                 :action="action"
                 :busy="actionBusyId === action.id"
-                @execute="handleExecuteAction"
                 @fill="handleFillAction"
-                @generate="handleGenerateOnly"
+                @execute="handleExecuteAction"
+                @revise="handleReviseAction"
                 @recommend="handleRecommendationAction"
               />
             </view>
@@ -106,6 +112,9 @@
 
           <view v-else class="assistant-empty inline-empty">
             <text class="section-desc">直接输入你现在想解决的事情，我会帮你一起梳理。</text>
+            <view class="context-suggestions">
+              <button v-for="item in contextSuggestions" :key="item" class="context-suggestion" @tap="handleSuggestion(item)">{{ item }}</button>
+            </view>
           </view>
         </scroll-view>
 
@@ -169,6 +178,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import AssistantActionCard from './AssistantActionCard.vue'
 import AssistantMarkdown from './AssistantMarkdown.vue'
+import AssistantPresentationCard from './AssistantPresentationCard.vue'
 import type { AssistantActionProposal, AssistantMessage, AssistantSession } from '../../types/api'
 import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
 import { sendDatingSignal } from '../../services/dating'
@@ -244,6 +254,13 @@ const contextLabel = computed(() => {
     general: '通用校园协作',
   }
   return labels[props.pageType] || labels.general
+})
+const contextSuggestions = computed(() => {
+  if (props.contextPath.includes('/trade/')) return ['帮我整理闲置发布', '推荐合适的交易', '帮我写一句询问消息']
+  if (props.contextPath.includes('/teammates/')) return ['帮我写组队招募', '推荐适合我的组队', '帮我写申请留言']
+  if (props.contextPath.includes('/dating/')) return ['帮我整理展示资料', '看看匹配偏好还缺什么', '帮我写开场白']
+  if (props.pageType === 'messages') return ['帮我把回复写自然一点', '帮我整理沟通重点']
+  return ['帮我写一条校园帖子', '帮我润色当前内容', '告诉我这个页面怎么用']
 })
 
 function assistantUiDebug(event: string, payload: Record<string, unknown> = {}) {
@@ -613,6 +630,15 @@ async function handleSend() {
   }
 }
 
+function handleSuggestion(value: string) {
+  draft.value = value
+  void handleSend()
+}
+
+function handleCustomField(prompt: string) {
+  draft.value = prompt
+}
+
 async function handleRestartSession() {
   clearLateResponseRecovery()
   bootstrapping.value = true
@@ -653,6 +679,10 @@ function handleFillAction(action: AssistantActionProposal) {
   saveAssistantDraft(action)
   uni.showToast({ title: '已填入草稿', icon: 'success' })
   openTargetPage(action.target_page)
+}
+
+function handleReviseAction() {
+  draft.value = '我想修改这版草稿：'
 }
 
 function handleGenerateOnly(action: AssistantActionProposal) {
@@ -1051,6 +1081,15 @@ function goLogin() {
   background: transparent;
 }
 
+.assistant-message.structured {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .assistant-message-head {
   display: flex;
   align-items: center;
@@ -1187,6 +1226,30 @@ function goLogin() {
 
 .inline-empty {
   padding: 24rpx 12rpx;
+}
+
+.context-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.context-suggestion {
+  min-height: 56rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  border-radius: 28rpx;
+  background: #fff;
+  color: #44515f;
+  font-size: 22rpx;
+  line-height: 56rpx;
+}
+
+.context-suggestion::after {
+  border: 0;
 }
 
 .thinking-row {
