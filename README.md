@@ -441,6 +441,23 @@ AGENT_TEMPERATURE
 AGENT_MAX_TOKENS
 ```
 
+组队、恋爱和交易推荐使用 OpenAI 兼容的 embeddings 接口做向量匹配。至少还需要配置：
+
+```text
+AGENT_EMBEDDING_MODEL=你的向量模型名
+AGENT_EMBEDDING_ENDPOINT_PATH=/embeddings
+AGENT_VECTOR_MIN_SIMILARITY=0.25
+```
+
+默认复用 `AGENT_API_KEY` 和 `AGENT_BASE_URL`。如果向量模型来自另一个服务，再单独配置：
+
+```text
+AGENT_EMBEDDING_API_KEY=向量服务的 key
+AGENT_EMBEDDING_BASE_URL=https://向量服务地址/v1
+```
+
+推荐请求会批量生成查询与候选内容的 embedding，在应用层计算余弦相似度并缓存结果。语义相似度占推荐分数的 85%，业务偏好和热度占 15%；性别、年龄范围、帖子状态和队伍容量仍作为硬条件。向量服务未配置或暂时不可用时，系统会自动降级到原有关键词规则。
+
 ### 2. 后端大模型调用入口在哪里
 
 后端大模型底层调用在：
@@ -472,8 +489,8 @@ apps/api/assistant/orchestrator.py
 ```text
 plan_assistant_turn()
   # 每次用户给 AI 发消息时的总入口
-  # 优先判断是否是推荐请求或破冰请求
-  # 否则进入普通 AI 草稿/动作卡片流程
+  # 正常路径先调用大模型判断推荐、创建、修改或消息等意图
+  # 大模型接口失败时不执行任何业务动作，避免关键词误判
 
 plan_turn_with_agent()
   # 使用大模型判断用户意图、当前页面、缺失字段和下一步动作
@@ -501,11 +518,11 @@ apps/api/assistant/recommendations.py
 
 ```text
 build_recommendation_action()
-  # AI 推荐总入口，判断用户要推荐组队、恋爱还是交易
+  # 执行大模型选定的组队、恋爱或交易推荐意图
 
 build_team_recommendations()
   # 组队推荐
-  # 主要根据用户本次输入关键词，匹配标题、摘要、详情、标签、所需技能
+  # 使用大模型整理的 query 做向量相似度与业务规则综合排序
 
 build_dating_recommendations()
   # 恋爱推荐
@@ -514,7 +531,7 @@ build_dating_recommendations()
 
 build_trade_recommendations()
   # 交易推荐
-  # 根据商品/交易关键词匹配标题、描述、成色、标签、交易类型
+  # 使用大模型整理的 query 匹配现有商品；不会把购买请求自动变成求购帖
 
 build_icebreaker_action()
   # 联系破冰
@@ -686,8 +703,10 @@ agent.py 的 call_agent_json() 调用大模型
 
 推荐逻辑说明：
 
-- 组队和交易推荐主要根据你本次输入的关键词。
-- 恋爱推荐会同时参考你保存的匹配偏好和本次输入。
+- 大模型结合提示词和 few-shot 示例决定用户要搜索现有内容还是创建新内容，并生成独立检索 query。
+- 意图路由不使用关键词匹配；大模型不可用时明确失败，不会自动发布或切换到本地意图规则。
+- 组队、交易和恋爱推荐使用向量相似度排序；向量服务故障时才降级到关键词规则。
+- 恋爱推荐还会参考用户已保存的匹配偏好。
 - AI 只推荐数据库里真实存在的内容，不会编造推荐对象。
 - 发布、评论、收藏、感兴趣等动作都需要用户确认。
 
