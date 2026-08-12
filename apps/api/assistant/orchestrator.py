@@ -23,7 +23,7 @@ from forum.categories import (
 from moderation.services import get_blocked_user_ids
 
 from .agent import AgentCallError, call_agent, call_agent_json
-from .recommendations import build_icebreaker_action, build_recommendation_action
+from .recommendations import RECOMMENDATION_KINDS, build_recommendation_action
 from .services import build_assistant_reply_with_history
 from .skills import SKILLS, _guess_kind
 
@@ -163,6 +163,7 @@ AGENT_ALLOWED_INTENTS = {
     "chat_message_batch_send",
     "profile_update",
     "forum_comment_create",
+    *RECOMMENDATION_KINDS,
 }
 AGENT_ALLOWED_SIGNALS = {
     "new_request",
@@ -188,6 +189,9 @@ AGENT_PAYLOAD_FIELDS = {
     "chat_message_send": {"thread_id", "body"},
     "chat_message_batch_send": {"target_user_ids", "recipient_names", "body"},
     "dating_setup": {"profile", "preference"},
+    "team_recommendations": {"query"},
+    "dating_recommendations": {"query"},
+    "trade_recommendations": {"query"},
 }
 AGENT_DATING_PROFILE_FIELDS = {"nickname", "gender", "height_cm", "weight_kg", "age", "interests", "bio", "is_visible"}
 AGENT_DATING_PREFERENCE_FIELDS = {
@@ -2269,8 +2273,21 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "profile": sorted(AGENT_DATING_PROFILE_FIELDS),
             "preference": sorted(AGENT_DATING_PREFERENCE_FIELDS),
         },
+        "intent_guidance": {
+            "team_recommendations": "搜索、浏览或推荐数据库中已经存在的组队招募和队友机会。",
+            "dating_recommendations": "搜索或推荐数据库中已经存在且符合偏好的恋爱匹配候选人。",
+            "trade_recommendations": "搜索、购买、寻找或推荐数据库中已经存在的闲置商品和交易帖子。",
+            "team_post_create": "用户明确要求发布或创建一条新的组队招募。",
+            "dating_setup": "用户明确要求创建或修改自己的恋爱资料、匹配偏好。",
+            "trade_post_create": "用户明确要求发布新的出售、求购、交换或服务交易帖子。",
+        },
         "forum_category_guidance": FORUM_CATEGORY_GUIDANCE,
         "policy": [
+            "搜索现有内容与创建新内容必须严格区分。用户说想买、想要、需要、寻找某个商品时使用 trade_recommendations；只有明确要求发布或创建求购帖时才使用 trade_post_create。",
+            "用户想找现成队伍、队友机会时使用 team_recommendations；只有明确要发布招募时才使用 team_post_create。",
+            "用户想查看合适对象时使用 dating_recommendations；只有明确要设置自己的资料或偏好时才使用 dating_setup。",
+            "recommendations 意图的 payload_patch 必须包含 query，写成脱离历史也能理解的完整检索需求；可以从当前草稿和历史补全商品或目标，但新请求中的目标优先。",
+            "用户的新请求可以切换并替换 current_state 中尚未完成的旧草稿，不要因为旧状态是创建帖子就继续创建。",
             "确认语义：不用调整了、不用改了、不需要修改、无需调整、没问题不用改，都表示用户认可当前草稿，应归类为 confirm_draft。",
             "意图和分类分开判断：明确找成员、缺角色、招队友才是 team_post_create；分享项目经验、讨论技术方案属于 forum_post_create 的“项目合作”。",
             "普通问候、闲聊或信息不足的输入不要强行生成帖子，应自然回复或追问用户想做什么。",
@@ -2293,13 +2310,102 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "intent": "one allowed intent",
             "user_signal": "one allowed user signal",
             "flow": "collecting|confirming|ready",
-            "payload_patch": "object with only allowed fields for the intent",
+            "payload_patch": "object with only allowed fields for the intent; recommendation intents require a standalone query",
             "missing_fields": "array of field keys still missing after applying payload_patch",
             "assistant_reply": "string",
             "should_create_actions": "boolean",
             "action_intents": "array of allowed action intents",
         },
     }
+    examples = [
+        (
+            "我想要一个键盘",
+            {
+                "intent": "trade_recommendations",
+                "user_signal": "new_request",
+                "flow": "ready",
+                "payload_patch": {"query": "键盘"},
+                "missing_fields": [],
+                "assistant_reply": "我来帮你看看现在有哪些键盘交易帖。",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+        (
+            "有没有人在卖闲置耳机",
+            {
+                "intent": "trade_recommendations",
+                "user_signal": "new_request",
+                "flow": "ready",
+                "payload_patch": {"query": "正在出售的闲置耳机"},
+                "missing_fields": [],
+                "assistant_reply": "我帮你查找现有的闲置耳机。",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+        (
+            "帮我发布一个求购键盘的帖子",
+            {
+                "intent": "trade_post_create",
+                "user_signal": "new_request",
+                "flow": "collecting",
+                "payload_patch": {"post_type": "buy", "title": "求购键盘", "description": ""},
+                "missing_fields": ["description"],
+                "assistant_reply": "可以。你对键盘类型、预算或成色有什么要求？",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+        (
+            "我有一个机械键盘想卖，帮我发帖",
+            {
+                "intent": "trade_post_create",
+                "user_signal": "new_request",
+                "flow": "collecting",
+                "payload_patch": {"post_type": "sell", "title": "机械键盘出售", "description": ""},
+                "missing_fields": ["description"],
+                "assistant_reply": "可以。请告诉我键盘的型号、成色和价格。",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+        (
+            "有没有缺前端的项目可以参加",
+            {
+                "intent": "team_recommendations",
+                "user_signal": "new_request",
+                "flow": "ready",
+                "payload_patch": {"query": "缺少前端成员的开放项目"},
+                "missing_fields": [],
+                "assistant_reply": "我来查找正在招募前端成员的项目。",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+        (
+            "帮我发一条招募前端队友的帖子",
+            {
+                "intent": "team_post_create",
+                "user_signal": "new_request",
+                "flow": "collecting",
+                "payload_patch": {"title": "招募前端队友", "required_skills": ["前端"]},
+                "missing_fields": ["summary", "details", "target_size"],
+                "assistant_reply": "可以。请先告诉我项目方向和计划招募的人数。",
+                "should_create_actions": False,
+                "action_intents": [],
+            },
+        ),
+    ]
+    few_shot_messages: list[dict[str, str]] = []
+    for example_prompt, example_decision in examples:
+        few_shot_messages.extend(
+            [
+                {"role": "user", "content": f"example_user_message={_safe_json(example_prompt)}"},
+                {"role": "assistant", "content": _safe_json(example_decision)},
+            ]
+        )
+
     return [
         {
             "role": "system",
@@ -2309,6 +2415,7 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
                 "不要输出解释、不要输出 Markdown、不要输出 JSON 之外的任何文本。"
             ),
         },
+        *few_shot_messages,
         {
             "role": "user",
             "content": (
@@ -2443,16 +2550,27 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
     decision = call_agent_json(_build_agent_decision_messages(session, clean_prompt, state, history), "assistant_turn_decision")
     _validate_agent_decision(decision)
 
-    intent = _correct_message_intent_for_session(
-        _correct_intent_for_prompt(_text(decision["intent"]), session.page_type, clean_prompt),
-        session,
-    )
+    intent = _text(decision["intent"])
+    signal = _text(decision.get("user_signal"))
+    if intent in RECOMMENDATION_KINDS:
+        raw_patch = decision.get("payload_patch")
+        query = _text(raw_patch.get("query")) if isinstance(raw_patch, dict) else ""
+        recommendation_result = build_recommendation_action(
+            user,
+            session,
+            query or clean_prompt,
+            kind=intent,
+            assistant_reply=_text(decision.get("assistant_reply")),
+        )
+        if recommendation_result:
+            return recommendation_result
+        raise AgentCallError("Agent selected an unsupported recommendation intent.")
+
     previous_intent = _text(state.get("intent"))
     base_payload = deepcopy(state.get("collected_payload") or {})
     if not base_payload or (previous_intent and previous_intent != intent and decision["user_signal"] == "new_request"):
         base_payload = _new_payload_for_intent(intent, session, clean_prompt)
 
-    signal = _correct_signal_for_prompt(_text(decision.get("user_signal")), clean_prompt)
     patch: dict[str, Any] = {}
     if not _is_payload_generation_control_signal(signal, clean_prompt, state, intent):
         try:
@@ -2564,27 +2682,15 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
             current_state,
         )
 
-    recommendation_result = build_recommendation_action(user, session, prompt)
-    if recommendation_result:
-        return recommendation_result
-
-    icebreaker_result = build_icebreaker_action(user, session, prompt)
-    if icebreaker_result:
-        return icebreaker_result
-
     try:
         return plan_turn_with_agent(user, session, prompt, history)
-    except AgentCallError:
-        return _plan_assistant_turn_fallback(user, session, prompt, history)
-        reply, actions, state = _plan_assistant_turn_fallback(user, session, prompt, history)
-        if actions:
-            state["flow"] = "ready"
-            return (
-                "我先把当前信息整理好了，不过这次 AI 判断结果不够稳定，所以暂时不直接弹动作卡片。你可以再确认一次，我会继续帮你生成。",
-                [],
-                state,
-            )
-        return reply, actions, state
+    except AgentCallError as exc:
+        logger.warning("AI decision failed; no business action was executed: %s", exc)
+        return (
+            "AI 服务暂时无法完成意图判断。为避免误发帖子或执行错误操作，我没有执行任何业务动作，请稍后重试。",
+            [],
+            current_state,
+        )
 
 
 def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
