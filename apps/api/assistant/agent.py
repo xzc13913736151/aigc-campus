@@ -15,15 +15,12 @@ from django.conf import settings
 class AgentConfig:
     api_key: str = ""
     base_url: str = ""
-    model: str = ""
-    endpoint_path: str = "/chat/completions"
+    user_id: str = "campusclaw"
     timeout_seconds: int = 30
-    temperature: float = 0.7
-    max_tokens: int = 800
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_key and self.base_url and self.model)
+        return bool(self.api_key and self.base_url and self.user_id)
 
 
 class AgentCallError(RuntimeError):
@@ -76,123 +73,126 @@ def _load_simple_yaml(path: Path) -> dict[str, Any]:
 def load_agent_config() -> AgentConfig:
     config_path = Path(os.getenv("AGENT_CONFIG_PATH", settings.REPO_DIR / "config.yaml"))
     raw_config = _load_simple_yaml(config_path)
-    agent_config = raw_config.get("agent", {})
+    agent_config = raw_config.get("hiagent", {})
     if not isinstance(agent_config, dict):
         agent_config = {}
 
     return AgentConfig(
-        api_key=os.getenv("AGENT_API_KEY", str(agent_config.get("api_key", ""))).strip(),
-        base_url=os.getenv("AGENT_BASE_URL", str(agent_config.get("base_url", ""))).strip().rstrip("/"),
-        model=os.getenv("AGENT_MODEL", str(agent_config.get("model", ""))).strip(),
-        endpoint_path=os.getenv("AGENT_ENDPOINT_PATH", str(agent_config.get("endpoint_path", "/chat/completions"))).strip() or "/chat/completions",
-        timeout_seconds=int(os.getenv("AGENT_TIMEOUT_SECONDS", agent_config.get("timeout_seconds", 30))),
-        temperature=float(os.getenv("AGENT_TEMPERATURE", agent_config.get("temperature", 0.7))),
-        max_tokens=int(os.getenv("AGENT_MAX_TOKENS", agent_config.get("max_tokens", 800))),
+        api_key=os.getenv("HIAGENT_API_KEY", str(agent_config.get("api_key", ""))).strip(),
+        base_url=os.getenv("HIAGENT_BASE_URL", str(agent_config.get("base_url", ""))).strip().rstrip("/"),
+        user_id=os.getenv("HIAGENT_USER_ID", str(agent_config.get("user_id", "campusclaw"))).strip(),
+        timeout_seconds=int(os.getenv("HIAGENT_TIMEOUT_SECONDS", agent_config.get("timeout_seconds", 30))),
     )
 
 
-def _completion_url(config: AgentConfig) -> str:
-    if config.base_url.rstrip("/").endswith(config.endpoint_path.strip("/")):
-        return config.base_url
-    endpoint = config.endpoint_path if config.endpoint_path.startswith("/") else f"/{config.endpoint_path}"
-    return f"{config.base_url}{endpoint}"
+def _endpoint_url(config: AgentConfig, endpoint: str) -> str:
+    return f"{config.base_url}/{endpoint.lstrip('/')}"
 
 
-def _run_local_tool(name: str, arguments: dict[str, Any]) -> str:
-    if name != "campusclaw_context":
-        return "没有找到对应的工具。"
-
-    page_type = str(arguments.get("page_type", "general"))
-    need = str(arguments.get("need", ""))
-    page_guides = {
-        "forum": "论坛页默认展示最新帖子，适合校园日常、求助、经验分享、活动信息和话题讨论。",
-        "publish": "发布页支持发帖子、发组队招募和公开恋爱匹配资料。",
-        "messages": "消息页用于聊天沟通，建议回复自然、有边界、能推动下一步。",
-        "me": "我的页面展示基础资料、头像昵称、黑名单和个人信息管理入口。",
-        "general": "CampusClaw 聚焦校园论坛、组队匹配、恋爱匹配、消息聊天和 AI 建议。",
+def _headers(config: AgentConfig) -> dict[str, str]:
+    return {
+        "Apikey": config.api_key,
+        "Content-Type": "application/json",
     }
-    return f"{page_guides.get(page_type, page_guides['general'])} 当前用户需求：{need}"
 
 
-def _post_completion(config: AgentConfig, payload: dict[str, Any]) -> dict[str, Any]:
+def _format_query(messages: list[dict[str, Any]]) -> str:
+    """Turn the existing prompt/history representation into HiAgent's Query field."""
+    role_labels = {"system": "System", "user": "User", "assistant": "Assistant", "tool": "Tool"}
+    rows: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        content = str(message.get("content", "")).strip()
+        if content:
+            rows.append(f"[{role_labels.get(str(message.get('role', 'user')), 'User')}]\n{content}")
+    query = "\n\n".join(rows).strip()
+    if not query:
+        raise AgentCallError("Agent query is empty.")
+    return query
+
+
+def _compact_query(query: str, max_chars: int = 4800) -> str:
+    """Keep HiAgent prompts below small agent context limits."""
+    if len(query) <= max_chars:
+        return query
+
+    # Decision prompts put the verbose policy/examples before the live context.
+    # Keep a short role instruction and the tail containing current state + user input.
+    tail = query[-(max_chars - 900) :]
+    return (
+        query[:900]
+        + "\n\n[Prompt shortened to fit HiAgent context limits.]\n"
+        + "Return a single JSON object with keys: intent, user_signal, flow, payload_patch, "
+        + "missing_fields, assistant_reply, should_create_actions, action_intents.\n"
+        + tail
+    )
+
+
+def _post_json(config: AgentConfig, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
     try:
         response = requests.post(
-            _completion_url(config),
-            headers={
-                "Authorization": f"Bearer {config.api_key}",
-                "Content-Type": "application/json",
-            },
-            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            _endpoint_url(config, endpoint),
+            headers=_headers(config),
+            json=payload,
             timeout=config.timeout_seconds,
         )
         response.raise_for_status()
-        return response.json()
+        data = response.json()
     except requests.RequestException as exc:
-        raise AgentCallError(f"Agent request failed: {exc}") from exc
+        raise AgentCallError(f"HiAgent request failed: {exc}") from exc
     except ValueError as exc:
-        raise AgentCallError("Agent response is not valid JSON.") from exc
+        raise AgentCallError("HiAgent response is not valid JSON.") from exc
+    if not isinstance(data, dict):
+        raise AgentCallError("HiAgent response format is invalid.")
+    return data
 
 
-def _extract_message(data: dict[str, Any]) -> dict[str, Any]:
+def _create_conversation(config: AgentConfig) -> str:
+    data = _post_json(config, "/create_conversation", {"UserID": config.user_id})
     try:
-        message = data["choices"][0]["message"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise AgentCallError("Agent response format is invalid.") from exc
-    if not isinstance(message, dict):
-        raise AgentCallError("Agent response message is invalid.")
-    return message
+        conversation_id = str(data["Conversation"]["AppConversationID"]).strip()
+    except (KeyError, TypeError) as exc:
+        raise AgentCallError("HiAgent conversation response format is invalid.") from exc
+    if not conversation_id:
+        raise AgentCallError("HiAgent returned an empty conversation ID.")
+    return conversation_id
+
+
+def _query_conversation(config: AgentConfig, conversation_id: str, query: str) -> str:
+    data = _post_json(
+        config,
+        "/chat_query_v2",
+        {
+            "UserID": config.user_id,
+            "AppConversationID": conversation_id,
+            "Query": query,
+            "ResponseMode": "blocking",
+        },
+    )
+    answer = _strip_provider_footer(str(data.get("answer", "")))
+    if not answer:
+        raise AgentCallError("HiAgent returned an empty answer.")
+    return answer
+
+
+def _strip_provider_footer(answer: str) -> str:
+    """Remove HiAgent/Feishu attribution appended outside the model response."""
+    return re.sub(r"\s*(?:本回答由\s*AI\s*生成|飞书端反馈|飛書端反饋).*?$", "", answer, flags=re.IGNORECASE | re.DOTALL).strip()
 
 
 def call_agent(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> str:
+    """Call HiAgent in blocking mode. Tool definitions are unsupported by this API."""
+    del tools
     config = load_agent_config()
     if not config.enabled:
-        raise AgentCallError("Agent config is incomplete.")
+        raise AgentCallError("HiAgent config is incomplete.")
+    if not 1 <= len(config.user_id) <= 20:
+        raise AgentCallError("HIAGENT_USER_ID must be between 1 and 20 characters.")
 
-    payload: dict[str, Any] = {
-        "model": config.model,
-        "messages": messages,
-        "temperature": config.temperature,
-        "max_tokens": config.max_tokens,
-    }
-    if tools:
-        payload["tools"] = tools
-        payload["tool_choice"] = "auto"
-
-    data = _post_completion(config, payload)
-    message = _extract_message(data)
-    tool_calls = message.get("tool_calls") or []
-    if tool_calls:
-        tool_messages = [*messages, message]
-        for tool_call in tool_calls:
-            function = tool_call.get("function", {}) if isinstance(tool_call, dict) else {}
-            name = function.get("name", "")
-            raw_arguments = function.get("arguments", "{}")
-            try:
-                arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
-            except ValueError:
-                arguments = {}
-            tool_messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.get("id", ""),
-                    "name": name,
-                    "content": _run_local_tool(name, arguments if isinstance(arguments, dict) else {}),
-                }
-            )
-
-        follow_up_payload = {
-            "model": config.model,
-            "messages": tool_messages,
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-        }
-        data = _post_completion(config, follow_up_payload)
-        message = _extract_message(data)
-
-    content = str(message.get("content", "")).strip()
-    if not content:
-        raise AgentCallError("Agent returned an empty response.")
-    return content
+    query = _compact_query(_format_query(messages))
+    conversation_id = _create_conversation(config)
+    return _query_conversation(config, conversation_id, query)
 
 
 def _strip_json_fence(content: str) -> str:

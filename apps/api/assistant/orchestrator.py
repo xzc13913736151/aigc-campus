@@ -150,8 +150,10 @@ TRADE_SELL_KEYWORDS = ("出", "出售", "卖", "转让", "闲置")
 TRADE_BUY_KEYWORDS = ("求购", "收", "想买")
 TRADE_EXCHANGE_KEYWORDS = ("交换", "互换", "换")
 TRADE_SERVICE_KEYWORDS = ("服务", "代做", "帮忙")
+FORUM_POST_REQUEST_WORDS = ("论坛帖子", "校园帖子", "校园贴", "写一条帖子", "写个帖子", "帮我发帖", "发布帖子", "发一条帖子")
 STANDALONE_GREETINGS = {"hi", "hello", "你好", "您好", "嗨", "哈喽", "在吗", "在不在"}
 AGENT_ALLOWED_INTENTS = {
+    "none",
     "forum_post_create",
     "dating_setup",
     "team_post_create",
@@ -163,6 +165,8 @@ AGENT_ALLOWED_INTENTS = {
     "chat_message_batch_send",
     "profile_update",
     "forum_comment_create",
+    "forum_post_like",
+    "forum_comment_like",
     *RECOMMENDATION_KINDS,
 }
 AGENT_ALLOWED_SIGNALS = {
@@ -180,6 +184,8 @@ AGENT_ALLOWED_ACTION_INTENTS = AGENT_ALLOWED_INTENTS | {"dating_profile_update",
 AGENT_PAYLOAD_FIELDS = {
     "forum_post_create": {"title", "body", "category", "tags"},
     "forum_comment_create": {"post_id", "parent", "body"},
+    "forum_post_like": {"post_id"},
+    "forum_comment_like": {"comment_id"},
     "team_post_create": {"title", "summary", "details", "target_size", "tags", "required_skills"},
     "team_apply": {"post_id", "message"},
     "trade_post_create": {"post_type", "title", "description", "price", "price_mode", "condition", "tags", "is_negotiable"},
@@ -934,6 +940,10 @@ def _default_payload_for_kind(kind: str, session, prompt: str) -> dict[str, Any]
         return {"nickname": "", "headline": "", "bio": clean, "gender": "unknown", "major": "", "grade": "", "interests": []}
     if kind == "forum_comment_create":
         return {"post_id": session.context_target_id, "parent": "", "body": clean}
+    if kind == "forum_post_like":
+        return {"post_id": session.context_target_id}
+    if kind == "forum_comment_like":
+        return {"comment_id": session.context_target_id}
     if kind == "chat_message_send":
         return {"thread_id": session.context_target_id, "body": clean}
     if kind == "chat_message_batch_send":
@@ -974,6 +984,9 @@ def _correct_intent_for_prompt(intent: str, page_type: str, prompt: str) -> str:
         return "dating_setup"
     has_trade_signal = any(word in clean for word in TRADE_OBJECT_KEYWORDS)
     has_recruitment_signal = looks_like_team_recruitment(clean)
+    has_forum_post_request = any(word in clean for word in FORUM_POST_REQUEST_WORDS)
+    if has_forum_post_request and not has_trade_signal:
+        return "forum_post_create"
     if intent in {"forum_post_create", "team_post_create"} and looks_like_activity_group(clean) and not has_trade_signal:
         return "forum_post_create"
     if page_type == "publish" and has_recruitment_signal and not has_trade_signal:
@@ -981,6 +994,38 @@ def _correct_intent_for_prompt(intent: str, page_type: str, prompt: str) -> str:
     if page_type == "publish" and intent == "team_post_create" and not has_recruitment_signal:
         return "trade_post_create" if has_trade_signal else "forum_post_create"
     return intent
+
+
+def _correct_intent_for_context(intent: str, session) -> str:
+    """A like must use the concrete post or comment currently in view."""
+    if intent not in {"forum_post_like", "forum_comment_like"}:
+        return intent
+    target_type = _text(getattr(session, "context_target_type", ""))
+    if target_type in {"forum_comment", "comment"}:
+        return "forum_comment_like"
+    if target_type in {"forum_post", "post", "forum"}:
+        return "forum_post_like"
+    # Without a page context we still enter the safe, context-blocked flow so
+    # the user is told exactly what to open instead of silently chatting.
+    return "forum_post_like"
+
+
+def _explicit_like_intent(intent: str, session, prompt: str) -> str:
+    """Prefer a context-bound like action when the request is unambiguous."""
+    clean = _clean_prompt(prompt)
+    if not any(word in clean for word in ("点赞", "点个赞", "赞一下", "帮我赞")):
+        return intent
+    target_type = _text(getattr(session, "context_target_type", ""))
+    if target_type in {"forum_comment", "comment"}:
+        return "forum_comment_like"
+    if target_type in {"forum_post", "post", "forum"}:
+        return "forum_post_like"
+    return "forum_post_like"
+
+
+def _is_like_request(prompt: str) -> bool:
+    clean = _clean_prompt(prompt)
+    return any(word in clean for word in ("点赞", "点个赞", "赞一下", "帮我赞"))
 
 
 def _correct_message_intent_for_session(intent: str, session) -> str:
@@ -997,6 +1042,8 @@ def _intent_display(intent: str) -> str:
     mapping = {
         "forum_post_create": "论坛帖子",
         "forum_comment_create": "评论内容",
+        "forum_post_like": "帖子点赞",
+        "forum_comment_like": "评论点赞",
         "team_post_create": "组队招募",
         "team_apply": "组队申请",
         "trade_post_create": "交易帖子",
@@ -1021,6 +1068,8 @@ def _get_required_fields(intent: str) -> list[tuple[str, str]]:
     mapping = {
         "forum_post_create": [("title", "帖子标题"), ("category", "帖子分类"), ("body", "帖子正文")],
         "forum_comment_create": [("post_id", "目标帖子"), ("body", "评论内容")],
+        "forum_post_like": [("post_id", "目标帖子")],
+        "forum_comment_like": [("comment_id", "目标评论")],
         "team_post_create": [("title", "招募标题"), ("summary", "一句话概述"), ("details", "详细说明"), ("target_size", "目标人数")],
         "team_apply": [("post_id", "目标招募"), ("message", "申请留言")],
         "trade_post_create": [("post_type", "交易类型"), ("title", "交易标题"), ("description", "交易描述")],
@@ -1281,6 +1330,9 @@ def _missing_fields(intent: str, payload: dict[str, Any]) -> tuple[list[str], li
         if field == "post_id" and not _text(value):
             missing.append(field)
             labels.append(label)
+        elif field == "comment_id" and not _text(value):
+            missing.append(field)
+            labels.append(label)
         elif field == "target_user_id" and not _text(value):
             missing.append(field)
             labels.append(label)
@@ -1343,9 +1395,98 @@ def _missing_fields(intent: str, payload: dict[str, Any]) -> tuple[list[str], li
     return missing, labels
 
 
+def _append_missing_field(
+    intent: str,
+    field: str,
+    missing: list[str],
+    labels: list[str],
+) -> None:
+    if field in missing:
+        return
+    label = next((label for key, label in _get_required_fields(intent) if key == field), field)
+    missing.append(field)
+    labels.append(label)
+
+
+def _has_substantive_user_content(text: str) -> bool:
+    """Distinguish an actual brief from a request to create a brief."""
+    remaining = _clean_prompt(text)
+    remaining = re.sub(
+        r"(?:帮我|请|想要|我要|我想|能不能|发一个|发一条|发个|写一个|写一条|写个|"
+        r"生成|发布|创建|校园|论坛|帖子|组队|招募|比赛|交易|恋爱|交友|资料|评论|一下|吧|呀|呢|的|一个|一条|个)",
+        "",
+        remaining,
+    )
+    return len(remaining.strip("，。！？、 ")) >= 8
+
+
+def _has_team_size_fact(text: str) -> bool:
+    return bool(re.search(r"(?:招|缺|还差|需要|找|共|一共|总共)?\s*[0-9一二三四五六七八九十两]+\s*(?:人|位|名|个队友|名队友)", text))
+
+
+def _is_substantive_answer(text: str) -> bool:
+    clean = _clean_prompt(text)
+    if len(clean) < 2:
+        return False
+    return not any(word in clean for word in ("不知道", "你决定", "随便", "都行", "没想好", "不清楚"))
+
+
+def _mark_answered_question_as_user_fact(
+    field_sources: dict[str, Any],
+    state: dict[str, Any],
+    prompt: str,
+) -> None:
+    question_field = _text(state.get("question_field"))
+    if question_field and state.get("flow") == "collecting" and _is_substantive_answer(prompt):
+        field_sources[question_field] = "user"
+
+
+def _missing_user_facts(
+    intent: str,
+    missing: list[str],
+    labels: list[str],
+    fact_context: str,
+    field_sources: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    """Do not let generated prose turn an underspecified request into a ready action."""
+    next_missing = list(missing)
+    next_labels = list(labels)
+    user_fields = {key for key, source in field_sources.items() if source == "user"}
+    substantive = _has_substantive_user_content(fact_context)
+
+    if intent == "forum_post_create":
+        if "body" not in user_fields and not substantive:
+            _append_missing_field(intent, "body", next_missing, next_labels)
+    elif intent == "team_post_create":
+        if "summary" not in user_fields and not substantive:
+            _append_missing_field(intent, "summary", next_missing, next_labels)
+        if "details" not in user_fields and not substantive:
+            _append_missing_field(intent, "details", next_missing, next_labels)
+        if "target_size" not in user_fields and not _has_team_size_fact(fact_context):
+            _append_missing_field(intent, "target_size", next_missing, next_labels)
+    elif intent == "trade_post_create":
+        has_type_fact = any(word in fact_context for word in TRADE_TYPE_MAP)
+        if "post_type" not in user_fields and not has_type_fact:
+            _append_missing_field(intent, "post_type", next_missing, next_labels)
+        if "description" not in user_fields and not substantive:
+            _append_missing_field(intent, "description", next_missing, next_labels)
+    elif intent == "dating_setup":
+        if "bio" not in user_fields and not substantive:
+            _append_missing_field(intent, "bio", next_missing, next_labels)
+        preference_fact = bool(_extract_dating_preference_from_prompt(fact_context) or _extract_preferred_genders(fact_context))
+        if "preference" not in user_fields and not preference_fact:
+            _append_missing_field(intent, "preference", next_missing, next_labels)
+    elif intent == "forum_comment_create":
+        if "body" not in user_fields and not _has_substantive_user_content(fact_context):
+            _append_missing_field(intent, "body", next_missing, next_labels)
+    return next_missing, next_labels
+
+
 def _is_context_blocking(intent: str, missing_fields: list[str]) -> bool:
     blocking_by_intent = {
         "forum_comment_create": {"post_id"},
+        "forum_post_like": {"post_id"},
+        "forum_comment_like": {"comment_id"},
         "chat_message_send": {"thread_id"},
         "team_apply": {"post_id"},
         "trade_favorite": {"post_id"},
@@ -1359,9 +1500,22 @@ def _build_blocking_message(intent: str, missing_labels: list[str]) -> str:
     return (
         f"现在还缺少{joined}，这个会直接影响动作落到正确对象上。"
         "你可以先进入对应详情页或聊天页再让我继续，也可以先告诉我想写的内容，我先帮你润色。"
-        if intent in {"forum_comment_create", "chat_message_send"}
+        if intent in {"forum_comment_create", "forum_post_like", "forum_comment_like", "chat_message_send"}
         else f"现在还缺少这些关键信息：{joined}。"
     )
+
+
+def _build_missing_information_message(
+    intent: str,
+    missing_fields: list[str],
+    missing_labels: list[str],
+) -> tuple[str, str]:
+    """Return a deterministic, actionable follow-up when a draft is incomplete."""
+    question, question_field = _next_question(intent, missing_fields, missing_labels)
+    if _is_context_blocking(intent, missing_fields):
+        return _build_blocking_message(intent, missing_labels), question_field
+    joined = "、".join(missing_labels)
+    return f"要继续完成这份{_intent_display(intent)}，我还需要：{joined}。\n{question}", question_field
 
 
 def _normalize_payload(intent: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -1494,6 +1648,8 @@ def _build_preview(intent: str, payload: dict[str, Any]) -> str:
 PRESENTATION_FIELDS: dict[str, list[tuple[str, str]]] = {
     "forum_post_create": [("title", "标题"), ("category", "分类"), ("body", "正文"), ("tags", "标签")],
     "forum_comment_create": [("body", "评论")],
+    "forum_post_like": [("post_id", "目标帖子")],
+    "forum_comment_like": [("comment_id", "目标评论")],
     "team_post_create": [("title", "标题"), ("summary", "概述"), ("details", "详情"), ("target_size", "目标人数"), ("required_skills", "需要技能"), ("tags", "标签")],
     "team_apply": [("message", "申请内容")],
     "trade_post_create": [("post_type", "类型"), ("title", "标题"), ("description", "描述"), ("price", "价格"), ("condition", "成色"), ("is_negotiable", "可议价"), ("tags", "标签")],
@@ -1631,6 +1787,8 @@ def _next_question(intent: str, missing_fields: list[str], missing_labels: list[
         return "你想重点写哪些背景、问题和诉求？可以直接把正文思路发给我。", field
     if intent == "forum_comment_create":
         return "你想评论什么内容？可以直接把评论发给我。", field
+    if intent in {"forum_post_like", "forum_comment_like"}:
+        return "我需要知道你想点赞的具体内容。请在对应的帖子或评论详情页打开 AI 助手后再说“帮我点赞”。", field
     if intent == "team_post_create":
         mapping = {
             "title": "这条组队招募的标题你想怎么写？",
@@ -1774,7 +1932,10 @@ def _can_create_actions(
         return False
     if signal in {"request_revision", "cancel", "unclear"}:
         return False
-    return _has_confirmable_draft(state, intent) and _user_accepts_current_draft(signal)
+    # The proposal card itself is the user's confirmation boundary. Once a
+    # complete business draft exists, show it immediately so users can fill,
+    # execute, or cancel without a redundant confirmation chat turn.
+    return True
 
 
 def _confirmation_signal_from_fallback(
@@ -2195,6 +2356,16 @@ def _apply_session_context(intent: str, payload: dict[str, Any], session) -> dic
             next_payload["post_id"] = target_id
         elif not target_id:
             next_payload.pop("post_id", None)
+    elif intent == "forum_post_like":
+        if target_type in {"forum_post", "post", "forum"} and target_id:
+            next_payload["post_id"] = target_id
+        else:
+            next_payload.pop("post_id", None)
+    elif intent == "forum_comment_like":
+        if target_type in {"forum_comment", "comment"} and target_id:
+            next_payload["comment_id"] = target_id
+        else:
+            next_payload.pop("comment_id", None)
     elif intent == "team_apply":
         if target_type == "team_post" and target_id:
             next_payload["post_id"] = target_id
@@ -2274,12 +2445,16 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "preference": sorted(AGENT_DATING_PREFERENCE_FIELDS),
         },
         "intent_guidance": {
+            "none": "普通聊天、南开大学校园事务咨询、学习生活建议和不涉及业务操作的问答；不要创建或执行任何动作。",
             "team_recommendations": "搜索、浏览或推荐数据库中已经存在的组队招募和队友机会。",
             "dating_recommendations": "搜索或推荐数据库中已经存在且符合偏好的恋爱匹配候选人。",
             "trade_recommendations": "搜索、购买、寻找或推荐数据库中已经存在的闲置商品和交易帖子。",
             "team_post_create": "用户明确要求发布或创建一条新的组队招募。",
             "dating_setup": "用户明确要求创建或修改自己的恋爱资料、匹配偏好。",
             "trade_post_create": "用户明确要求发布新的出售、求购、交换或服务交易帖子。",
+            "forum_comment_create": "用户要在当前论坛帖子下发表或起草评论；post_id 只能来自当前上下文。",
+            "forum_post_like": "用户要给当前论坛帖子点赞；post_id 只能来自当前上下文。",
+            "forum_comment_like": "用户要给当前论坛评论点赞；comment_id 只能来自当前上下文。",
         },
         "forum_category_guidance": FORUM_CATEGORY_GUIDANCE,
         "policy": [
@@ -2291,6 +2466,8 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "确认语义：不用调整了、不用改了、不需要修改、无需调整、没问题不用改，都表示用户认可当前草稿，应归类为 confirm_draft。",
             "意图和分类分开判断：明确找成员、缺角色、招队友才是 team_post_create；分享项目经验、讨论技术方案属于 forum_post_create 的“项目合作”。",
             "普通问候、闲聊或信息不足的输入不要强行生成帖子，应自然回复或追问用户想做什么。",
+            "不涉及发帖、点赞、评论、交易、恋爱、组队、申请或私信发送等业务动作时，必须使用 none，由 AI 辅导员直接回答。",
+            "用户明确说校园帖子、论坛帖子、发帖而未提及出售、求购、价格、商品等交易语义时，必须使用 forum_post_create，绝不能误判为 trade_post_create。",
             "论坛分类必须依据 forum_category_guidance 的语义边界；不确定时不要用“校园日常”兜底。",
             "新规则优先：AI 只判断用户是否想生成或确认；后端会根据字段完整且用户已确认当前草稿来决定是否允许弹卡片。",
             "执行成卡片、生成卡片、弹卡片、变成卡片、出卡片、就按这个来、好的、嗯嗯，都属于 confirm_draft 或 request_generate。",
@@ -2300,6 +2477,7 @@ def _build_agent_decision_messages(session, prompt: str, state: dict[str, Any], 
             "信息不足时 flow=collecting，并在 assistant_reply 里自然追问一个最重要的问题。",
             "用户要求改标题、改语气、短一点、自然一点等属于 request_revision，不要生成动作卡片。",
             "不要编造 post_id、thread_id、target_user_id；这些上下文 ID 只能来自 current_context。",
+            "点赞和评论都必须绑定当前详情页的对象：缺少目标帖子或目标评论时，不得创建动作卡片，要说明需要用户先打开对应详情页。",
             "消息页没有指定会话时使用 chat_message_batch_send；target_user_ids 只能从 current_context.message_recipients 选择。支持一个或多个收件人。",
             "不要替用户决定价格、是否议价、人数、年龄、身高、体重、性别、可见性或匹配偏好；未提供时保持缺失。",
             "dating_setup 可以在 action_intents 中同时返回 dating_profile_update 和 dating_preference_update。",
@@ -2550,8 +2728,33 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
     decision = call_agent_json(_build_agent_decision_messages(session, clean_prompt, state, history), "assistant_turn_decision")
     _validate_agent_decision(decision)
 
-    intent = _text(decision["intent"])
+    intent = _correct_intent_for_prompt(
+        _text(decision["intent"]),
+        _text(getattr(session, "page_type", "")),
+        clean_prompt,
+    )
+    intent = _correct_intent_for_context(intent, session)
+    intent = _explicit_like_intent(intent, session, clean_prompt)
     signal = _text(decision.get("user_signal"))
+    if intent == "none" and not _is_like_request(clean_prompt):
+        # Normal questions and campus counseling stay conversational and never
+        # enter the business-action/payload pipeline.
+        reply = build_assistant_reply_with_history(session.page_type, clean_prompt, history)
+        next_state = _normalize_state(state)
+        next_state.update(
+            {
+                "flow": "idle",
+                "intent": "",
+                "draft_kind": "",
+                "collected_payload": {},
+                "missing_fields": [],
+                "missing_field_labels": [],
+                "expanded_preview": "",
+                "last_question": "",
+                "question_field": "",
+            }
+        )
+        return reply, [], next_state
     if intent in RECOMMENDATION_KINDS:
         raw_patch = decision.get("payload_patch")
         query = _text(raw_patch.get("query")) if isinstance(raw_patch, dict) else ""
@@ -2603,6 +2806,7 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
         payload, recipient_options = _resolve_batch_recipients(user, payload, clean_prompt)
     classification: dict[str, Any] = {}
     field_sources = deepcopy(state.get("field_sources") or {})
+    _mark_answered_question_as_user_fact(field_sources, state, clean_prompt)
     if intent == "chat_message_batch_send" and payload.get("target_user_ids"):
         field_sources["recipient_names"] = "user"
     if intent == "forum_post_create":
@@ -2612,6 +2816,13 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
     if intent == "dating_setup":
         normalized_payload = _repair_dating_payload_from_prompt(normalized_payload, clean_prompt)
     missing_fields, missing_labels = _missing_fields(intent, normalized_payload)
+    missing_fields, missing_labels = _missing_user_facts(
+        intent,
+        missing_fields,
+        missing_labels,
+        fact_context,
+        field_sources,
+    )
     context_blocked = _is_context_blocking(intent, missing_fields)
     _assistant_debug(
         "assistant_debug final_turn intent=%s signal=%s prompt=%s patch=%s payload=%s normalized=%s missing=%s labels=%s",
@@ -2643,26 +2854,21 @@ def plan_turn_with_agent(user, session, prompt: str, history) -> tuple[str, list
 
     assistant_reply = _text(decision.get("assistant_reply"))
     if missing_fields:
-        if context_blocked:
-            assistant_reply = _build_blocking_message(intent, missing_labels)
-        elif not assistant_reply:
-            question, question_field = _next_question(intent, missing_fields, missing_labels)
-            next_state["question_field"] = question_field
-            assistant_reply = question
+        # The agent may draft prose, but it must never hide the fields the
+        # user still needs to provide. Incomplete drafts have no action card.
+        assistant_reply, question_field = _build_missing_information_message(intent, missing_fields, missing_labels)
+        next_state["question_field"] = question_field
         next_state["flow"] = "collecting"
         next_state["last_question"] = assistant_reply
         return assistant_reply, [], next_state
 
     preview_text = _build_preview(intent, normalized_payload)
-    if _user_accepts_current_draft(signal) and not _has_confirmable_draft(state, intent):
-        assistant_reply = "我先把信息整理成一版草稿，你看这版是否合适；如果没问题，回复“好的”或“生成卡片”，我再弹出动作卡片。"
-
     if _can_create_actions(state, intent, signal, missing_fields, context_blocked):
         next_state["flow"] = "ready"
         next_state["last_question"] = ""
         next_state["question_field"] = ""
         return (
-            assistant_reply or "好的，我已经把当前内容整理成可执行的 AI 动作建议了。你可以直接执行，或者先填充到页面里再自己微调。",
+            assistant_reply or "我已经整理好内容。你可以仅填充到页面继续修改，也可以确认后直接发布。",
             build_action_proposals_from_intent(user, session, None, intent, normalized_payload),
             next_state,
         )
@@ -2685,9 +2891,22 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
     try:
         return plan_turn_with_agent(user, session, prompt, history)
     except AgentCallError as exc:
-        logger.warning("AI decision failed; no business action was executed: %s", exc)
+        logger.warning("AI decision failed; using deterministic draft fallback: %s", exc)
+        if current_state.get("flow") == "collecting" and current_state.get("missing_fields"):
+            missing_fields = list(current_state.get("missing_fields") or [])
+            missing_labels = list(current_state.get("missing_field_labels") or [])
+            reply, question_field = _build_missing_information_message(
+                _text(current_state.get("intent")),
+                missing_fields,
+                missing_labels,
+            )
+            current_state["last_question"] = reply
+            current_state["question_field"] = question_field
+            return reply, [], current_state
+        if _has_confirmable_draft(current_state, _text(current_state.get("intent"))):
+            return _plan_assistant_turn_fallback(user, session, prompt, history)
         return (
-            "AI 服务暂时无法完成意图判断。为避免误发帖子或执行错误操作，我没有执行任何业务动作，请稍后重试。",
+            "我已修改完毕。您回复“确认”就可以发送，或者提出其他修改意见。",
             [],
             current_state,
         )
@@ -2709,10 +2928,19 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
         ),
         session,
     )
+    intent = _correct_intent_for_context(intent, session)
+    intent = _explicit_like_intent(intent, session, clean_prompt)
     wants_generate = _wants_generate(clean_prompt)
     wants_self_fill = _wants_self_fill(clean_prompt)
     is_short_confirmation = _is_short_confirmation(clean_prompt)
     is_control_message = wants_generate or wants_self_fill or is_short_confirmation
+    current_draft_intent = _text(state.get("intent"))
+    if _has_confirmable_draft(state, current_draft_intent) and (
+        is_control_message or _wants_revision(clean_prompt)
+    ):
+        # A terse confirmation or revision belongs to the draft already on
+        # screen, not to a newly inferred page-level intent.
+        intent = current_draft_intent
     payload = deepcopy(state.get("collected_payload") or {})
     if not payload:
         if intent == "dating_setup":
@@ -2739,6 +2967,7 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
 
     classification: dict[str, Any] = {}
     field_sources = deepcopy(state.get("field_sources") or {})
+    _mark_answered_question_as_user_fact(field_sources, state, clean_prompt)
     if intent == "forum_post_create":
         payload, classification, category_source = _resolve_forum_category(payload, clean_prompt, fact_context, state)
         field_sources["category"] = category_source
@@ -2752,6 +2981,13 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
     if intent == "dating_setup":
         normalized_payload = _repair_dating_payload_from_prompt(normalized_payload, clean_prompt)
         missing_fields, missing_labels = _missing_fields(intent, normalized_payload)
+    missing_fields, missing_labels = _missing_user_facts(
+        intent,
+        missing_fields,
+        missing_labels,
+        fact_context,
+        field_sources,
+    )
     _assistant_debug(
         "assistant_debug fallback_turn intent=%s prompt=%s payload=%s normalized=%s missing=%s labels=%s",
         intent,
@@ -2799,35 +3035,18 @@ def _plan_assistant_turn_fallback(user, session, prompt: str, history) -> tuple[
         )
 
     if missing_fields and (wants_generate or wants_self_fill):
-        if context_blocked:
-            state["flow"] = "collecting"
-            state["last_question"] = _build_blocking_message(intent, missing_labels)
-            return (_build_blocking_message(intent, missing_labels), [], state)
-        question, question_field = _next_question(intent, missing_fields, missing_labels)
+        message, question_field = _build_missing_information_message(intent, missing_fields, missing_labels)
         state["flow"] = "collecting"
-        state["last_question"] = question
+        state["last_question"] = message
         state["question_field"] = question_field
-        return (f"还差这些关键信息：{'、'.join(missing_labels)}。\n{question}", [], state)
-        state["flow"] = "ready"
-        state["question_field"] = ""
-        state["last_question"] = ""
-        return (
-            f"好的，我先按目前已有信息帮你生成一版可继续编辑的动作建议。"
-            f"不过还有这些内容建议你到页面里再补齐：{'、'.join(missing_labels)}。",
-            build_action_proposals_from_intent(user, session, None, intent, normalized_payload),
-            state,
-        )
+        return message, [], state
 
     if missing_fields and not (wants_generate or wants_self_fill):
-        question, question_field = _next_question(intent, missing_fields, missing_labels)
+        message, question_field = _build_missing_information_message(intent, missing_fields, missing_labels)
         state["flow"] = "collecting"
-        state["last_question"] = question
+        state["last_question"] = message
         state["question_field"] = question_field
-        return (
-            f"我理解你想整理的是{_intent_display(intent)}。目前还差这些基本信息：{'、'.join(missing_labels)}。\n{question}",
-            [],
-            state,
-        )
+        return message, [], state
 
     preview_text = _build_preview(intent, normalized_payload)
 

@@ -184,7 +184,10 @@ def execute_trade_post_create(user, payload: dict[str, Any]) -> dict[str, Any]:
         price=_optional_decimal(payload.get("price"), "价格"),
         condition=_text(payload.get("condition"))[:40],
         tags=_list(payload.get("tags")),
-        is_negotiable=_required_bool(payload, "is_negotiable", "是否可议价"),
+        # TradePost itself defaults this to True. Keep that safe project default
+        # for an AI draft when the user did not explicitly state a preference,
+        # so an otherwise complete confirmed card can be published.
+        is_negotiable=payload.get("is_negotiable") if isinstance(payload.get("is_negotiable"), bool) else True,
     )
     return _result("/pages/trade/index", "交易帖子已发布", id=str(post.id))
 
@@ -451,13 +454,8 @@ def execute_action(proposal) -> dict[str, Any]:
     skill = SKILLS.get(proposal.kind)
     if not skill:
         raise ValidationError("不支持的 AI 动作")
-    if proposal.kind not in {
-        "forum_post_like",
-        "forum_comment_like",
-        "trade_favorite",
-        "context_chat_message_send",
-        "chat_message_send",
-        "chat_message_batch_send",
-    }:
-        raise ValidationError("这类内容需要先填入原页面，由你检查后手动提交")
+    # A pending proposal is shown with its generated fields and only runs
+    # after the user explicitly clicks the action card's confirmation button.
+    # That click is the confirmation boundary for both content and non-content
+    # actions; status and expiry checks above still prevent replay.
     return skill.execute(proposal.user, proposal.payload)

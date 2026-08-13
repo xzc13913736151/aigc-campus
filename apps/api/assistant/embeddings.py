@@ -31,8 +31,8 @@ class EmbeddingError(RuntimeError):
 
 def load_embedding_config() -> EmbeddingConfig:
     return EmbeddingConfig(
-        api_key=os.getenv("AGENT_EMBEDDING_API_KEY", os.getenv("AGENT_API_KEY", "")).strip(),
-        base_url=os.getenv("AGENT_EMBEDDING_BASE_URL", os.getenv("AGENT_BASE_URL", "")).strip().rstrip("/"),
+        api_key=os.getenv("AGENT_EMBEDDING_API_KEY", "").strip(),
+        base_url=os.getenv("AGENT_EMBEDDING_BASE_URL", "").strip().rstrip("/"),
         model=os.getenv("AGENT_EMBEDDING_MODEL", "").strip(),
         endpoint_path=os.getenv("AGENT_EMBEDDING_ENDPOINT_PATH", "/embeddings").strip() or "/embeddings",
         timeout_seconds=int(os.getenv("AGENT_EMBEDDING_TIMEOUT_SECONDS", "30")),
