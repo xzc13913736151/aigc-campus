@@ -2891,7 +2891,7 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
     try:
         return plan_turn_with_agent(user, session, prompt, history)
     except AgentCallError as exc:
-        logger.warning("AI decision failed; using deterministic draft fallback: %s", exc)
+        logger.warning("AI decision failed; applying safe fallback: %s", exc)
         if current_state.get("flow") == "collecting" and current_state.get("missing_fields"):
             missing_fields = list(current_state.get("missing_fields") or [])
             missing_labels = list(current_state.get("missing_field_labels") or [])
@@ -2906,7 +2906,7 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
         if _has_confirmable_draft(current_state, _text(current_state.get("intent"))):
             return _plan_assistant_turn_fallback(user, session, prompt, history)
         return (
-            "我已修改完毕。您回复“确认”就可以发送，或者提出其他修改意见。",
+            "AI 服务暂时无法完成意图判断。为避免误发帖子或执行错误操作，我没有执行任何业务动作，请稍后重试。",
             [],
             current_state,
         )
