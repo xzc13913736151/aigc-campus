@@ -2685,7 +2685,20 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
     try:
         return plan_turn_with_agent(user, session, prompt, history)
     except AgentCallError as exc:
-        logger.warning("AI decision failed; no business action was executed: %s", exc)
+        logger.warning("AI decision failed; applying safe fallback: %s", exc)
+        if current_state.get("flow") == "collecting" and current_state.get("missing_fields"):
+            missing_fields = list(current_state.get("missing_fields") or [])
+            missing_labels = list(current_state.get("missing_field_labels") or [])
+            reply, question_field = _build_missing_information_message(
+                _text(current_state.get("intent")),
+                missing_fields,
+                missing_labels,
+            )
+            current_state["last_question"] = reply
+            current_state["question_field"] = question_field
+            return reply, [], current_state
+        if _has_confirmable_draft(current_state, _text(current_state.get("intent"))):
+            return _plan_assistant_turn_fallback(user, session, prompt, history)
         return (
             "AI 服务暂时无法完成意图判断。为避免误发帖子或执行错误操作，我没有执行任何业务动作，请稍后重试。",
             [],
