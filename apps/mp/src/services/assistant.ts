@@ -39,3 +39,9 @@ export function executeAssistantAction(actionId: string) {
     method: 'POST',
   })
 }
+
+export function dismissAssistantAction(actionId: string) {
+  return request<{ action: AssistantActionProposal }>(`assistant/actions/${actionId}/dismiss/`, {
+    method: 'POST',
+  })
+}

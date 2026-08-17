@@ -1,6 +1,6 @@
 export const APP_NAME = 'CampusClaw'
 
-const DEFAULT_API_BASE_URL = 'http://10.159.119.45:8000/api/v1'
+const DEFAULT_API_BASE_URL = 'http://192.168.0.102:8000/api/v1'
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim()
 
 // VITE_API_BASE_URL is supplied per environment when the mini-program/App is built.

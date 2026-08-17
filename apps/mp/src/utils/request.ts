@@ -23,6 +23,26 @@ function requestFailureMessage(error: unknown) {
   return rawMessage || '请求服务失败，请稍后重试'
 }
 
+function responseErrorMessage(data: unknown, statusCode: number) {
+  const detail = (data as { detail?: unknown })?.detail
+  if (typeof detail === 'string') {
+    return detail
+  }
+  if (Array.isArray(detail)) {
+    return detail.map((item) => String(item)).filter(Boolean).join('；') || `Request failed with ${statusCode}`
+  }
+  if (data && typeof data === 'object') {
+    const messages = Object.values(data as Record<string, unknown>)
+      .flatMap((value) => Array.isArray(value) ? value : [value])
+      .map((value) => String(value))
+      .filter(Boolean)
+    if (messages.length) {
+      return messages.join('；')
+    }
+  }
+  return `Request failed with ${statusCode}`
+}
+
 async function sendRequest(
   url: string,
   method: NonNullable<RequestOptions['method']>,
@@ -66,11 +86,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   const statusCode = response.statusCode ?? 0
   if (statusCode < 200 || statusCode >= 300) {
-    const detail =
-      typeof (response.data as { detail?: unknown })?.detail === 'string'
-        ? (response.data as { detail: string }).detail
-        : `Request failed with ${statusCode}`
-    throw new Error(detail)
+    throw new Error(responseErrorMessage(response.data, statusCode))
   }
 
   return response.data as T

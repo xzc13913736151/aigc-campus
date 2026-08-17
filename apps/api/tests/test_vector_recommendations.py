@@ -53,8 +53,8 @@ class EmbeddingTests(SimpleTestCase):
         }
         post = Mock(return_value=response)
         environment = {
-            "AGENT_API_KEY": "test-key",
-            "AGENT_BASE_URL": "https://ai.example/v1/chat/completions",
+            "AGENT_EMBEDDING_API_KEY": "test-key",
+            "AGENT_EMBEDDING_BASE_URL": "https://ai.example/v1",
             "AGENT_EMBEDDING_MODEL": "embedding-test",
         }
         with patch.dict(os.environ, environment), patch("assistant.embeddings.requests.post", post):

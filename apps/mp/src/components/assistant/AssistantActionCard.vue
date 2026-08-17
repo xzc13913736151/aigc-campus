@@ -49,21 +49,15 @@
       </view>
     </view>
 
-    <view v-else-if="isMessageAction" class="action-buttons">
-      <button class="action-button primary" :disabled="disabled" @tap="$emit('execute', action)">
-        确认发送
-      </button>
-      <button class="action-button ghost" :disabled="disabled" @tap="$emit('revise', action)">
-        继续修改
-      </button>
-    </view>
-
     <view v-else class="action-buttons">
       <button class="action-button primary" :disabled="disabled" @tap="$emit('fill', action)">
-        填入表单
+        仅填充
       </button>
-      <button class="action-button ghost" :disabled="disabled" @tap="$emit('revise', action)">
-        继续修改
+      <button class="action-button execute" :disabled="disabled" @tap="$emit('execute', action)">
+        {{ executeButtonText }}
+      </button>
+      <button class="action-button ghost" :disabled="disabled" @tap="$emit('cancel', action)">
+        取消
       </button>
     </view>
   </view>
@@ -82,12 +76,19 @@ const props = defineProps<{
 defineEmits<{
   fill: [AssistantActionProposal]
   execute: [AssistantActionProposal]
+  cancel: [AssistantActionProposal]
   revise: [AssistantActionProposal]
   recommend: [AssistantActionProposal, Record<string, unknown>, 'open' | 'contact' | 'fill' | 'favorite']
 }>()
 
 const disabled = computed(() => props.action.status !== 'pending' || Boolean(props.busy))
 const isMessageAction = computed(() => ['chat_message_send', 'context_chat_message_send', 'chat_message_batch_send'].includes(props.action.kind))
+const executeButtonText = computed(() => {
+  if (isMessageAction.value) return '填充并发送'
+  return ['forum_post_create', 'team_post_create', 'trade_post_create'].includes(props.action.kind)
+    ? '填充并发布'
+    : '确认执行'
+})
 const statusText = computed(() => {
   const labels: Record<string, string> = {
     pending: '待确认',
@@ -257,6 +258,12 @@ function fillButtonText(item: Record<string, unknown>) {
 .action-button.ghost {
   background: t.$color-surface;
   color: t.$color-ink;
+}
+
+.action-button.execute {
+  background: #102133;
+  color: t.$color-inverse;
+  border-color: #102133;
 }
 
 .action-button.compact {

@@ -12,7 +12,7 @@ aigc-campus-main/
     api/                 # Django 后端
     mp/                  # uni-app 微信小程序端
   docs/                  # 项目说明文档
-  config.yaml            # AI 大模型配置
+  config.yaml            # HiAgent 配置（API Key 仅放服务端）
   docker-compose.yml     # 可选数据库/Redis 配置
 ```
 
@@ -419,26 +419,22 @@ config.yaml
 示例：
 
 ```yaml
-agent:
-  api_key: "你的 key"
-  base_url: "你的 base url"
-  model: "模型名"
-  endpoint_path: "/chat/completions"
+hiagent:
+  # 填写 HiAgent 域名和 API Key；不要提交真实 key。
+  base_url: "https://你的域名/api/proxy/api/v1"
+  api_key: "你的 HiAgent API Key"
+  # HiAgent 必填，长度为 1-20 个字符。
+  user_id: "campusclaw"
   timeout_seconds: 30
-  temperature: 0.7
-  max_tokens: 800
 ```
 
 也可以用环境变量覆盖：
 
 ```text
-AGENT_API_KEY
-AGENT_BASE_URL
-AGENT_MODEL
-AGENT_ENDPOINT_PATH
-AGENT_TIMEOUT_SECONDS
-AGENT_TEMPERATURE
-AGENT_MAX_TOKENS
+HIAGENT_BASE_URL
+HIAGENT_API_KEY
+HIAGENT_USER_ID
+HIAGENT_TIMEOUT_SECONDS
 ```
 
 组队、恋爱和交易推荐使用 OpenAI 兼容的 embeddings 接口做向量匹配。至少还需要配置：
@@ -449,7 +445,7 @@ AGENT_EMBEDDING_ENDPOINT_PATH=/embeddings
 AGENT_VECTOR_MIN_SIMILARITY=0.25
 ```
 
-默认复用 `AGENT_API_KEY` 和 `AGENT_BASE_URL`。如果向量模型来自另一个服务，再单独配置：
+HiAgent 不提供本项目所需的 OpenAI embeddings 接口，向量模型需要单独配置兼容服务：
 
 ```text
 AGENT_EMBEDDING_API_KEY=向量服务的 key
@@ -470,7 +466,7 @@ apps/api/assistant/agent.py
 
 ```text
 load_agent_config()      # 读取 config.yaml 或环境变量
-call_agent()             # 调用 OpenAI 风格 /chat/completions 接口，返回文本
+call_agent()             # 依次调用 HiAgent create_conversation 和 chat_query_v2，返回 answer
 call_agent_json()        # 调用大模型并要求返回 JSON，用于结构化决策和草稿生成
 ```
 
@@ -738,10 +734,10 @@ config.yaml
 需要配置可用的大模型：
 
 ```yaml
-agent:
-  api_key: "你的 key"
-  base_url: "你的 base url"
-  model: "模型名"
+hiagent:
+  base_url: "https://你的域名/api/proxy/api/v1"
+  api_key: "你的 HiAgent API Key"
+  user_id: "campusclaw"
 ```
 
 如果网络慢，AI 回复可能等待较久。当前前端已经给 AI 请求设置较长超时时间。

@@ -1,5 +1,13 @@
 <template>
   <view class="container">
+    <AssistantSheet
+      :visible="assistantVisible"
+      page-type="forum"
+      :context-path="`/pages/forum/detail?id=${postId}`"
+      :context-target-type="assistantTargetType"
+      :context-target-id="assistantTargetId"
+      @close="assistantVisible = false"
+    />
     <view v-if="loading" class="card empty">
       <text class="section-desc">帖子详情加载中...</text>
     </view>
@@ -47,6 +55,7 @@
         <view style="height: 20rpx" />
         <view class="action-row post-actions">
           <LikeButton :liked="post.is_liked" :count="post.like_count" :busy="liking" @toggle="handleLike" />
+          <button class="btn btn-ghost" @tap="openAssistant">AI 帮忙</button>
           <button v-if="!isAuthor" class="btn btn-ghost" @tap="handleReportPost">举报帖子</button>
           <button v-if="isAuthor" class="btn btn-secondary" @tap="goEdit">编辑帖子</button>
           <button v-if="isAuthor" class="btn btn-ghost" :disabled="deleting" @tap="handleDelete">
@@ -108,6 +117,7 @@
               <button class="btn btn-ghost btn-small" @tap="toggleReply(comment.id)">
                 {{ replyingTo === comment.id ? '收起' : '回复' }}
               </button>
+              <button class="btn btn-ghost btn-small" @tap="openAssistantForComment(comment.id)">AI 帮忙</button>
               <button v-if="!isMyComment(comment.author.email)" class="btn btn-ghost btn-small" @tap="handleReportComment(comment.id)">
                 举报
               </button>
@@ -149,6 +159,7 @@
                   <button v-if="!isMyComment(reply.author.email)" class="btn btn-ghost btn-small" @tap="handleReportComment(reply.id)">
                     举报
                   </button>
+                  <button class="btn btn-ghost btn-small" @tap="openAssistantForComment(reply.id)">AI 帮忙</button>
                 </view>
               </view>
             </view>
@@ -172,6 +183,7 @@ import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 
 import CachedImage from '../../components/CachedImage.vue'
+import AssistantSheet from '../../components/assistant/AssistantSheet.vue'
 import LikeButton from '../../components/LikeButton.vue'
 import UserAvatar from '../../components/UserAvatar.vue'
 import type { ForumPost, UserSummary } from '../../types/api'
@@ -195,6 +207,9 @@ const replyBody = ref('')
 const replyingTo = ref('')
 const commentError = ref('')
 const hasToken = ref(isAuthenticated.value)
+const assistantVisible = ref(false)
+const assistantTargetType = ref('forum_post')
+const assistantTargetId = ref('')
 
 const isAuthor = computed(() =>
   Boolean(post.value && currentUser.value?.email && post.value.author.email === currentUser.value.email),
@@ -400,6 +415,18 @@ function collectOptionalDetails() {
 
 function goEdit() {
   navigateTo(`/pages/forum/create?id=${postId.value}`)
+}
+
+function openAssistant() {
+  assistantTargetType.value = 'forum_post'
+  assistantTargetId.value = postId.value
+  assistantVisible.value = true
+}
+
+function openAssistantForComment(commentId: string) {
+  assistantTargetType.value = 'forum_comment'
+  assistantTargetId.value = commentId
+  assistantVisible.value = true
 }
 
 function toggleReply(commentId: string) {

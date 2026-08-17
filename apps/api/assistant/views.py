@@ -148,3 +148,18 @@ class AssistantActionExecuteAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class AssistantActionDismissAPIView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, action_id):
+        proposal = get_object_or_404(
+            AssistantActionProposal,
+            pk=action_id,
+            user=request.user,
+            status=AssistantActionProposal.Status.PENDING,
+        )
+        proposal.status = AssistantActionProposal.Status.DISMISSED
+        proposal.save(update_fields=["status", "updated_at"])
+        return Response({"action": AssistantActionProposalSerializer(proposal).data}, status=status.HTTP_200_OK)

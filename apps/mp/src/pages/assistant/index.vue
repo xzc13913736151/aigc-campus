@@ -19,18 +19,21 @@
       :show-scrollbar="false"
     >
       <view v-if="!messages.length && !loading" class="empty-state">
-        <text class="empty-title">你好，我是 AI 助手</text>
-        <view style="height: 16rpx" />
-        <text class="empty-desc">有什么我可以帮助你的吗？</text>
-        <view style="height: 24rpx" />
-        <view class="quick-replies">
-          <view
-            v-for="(reply, index) in quickReplies"
-            :key="index"
-            class="quick-reply-item"
-            @tap="handleQuickReply(reply)"
-          >
-            <text>{{ reply }}</text>
+        <text class="empty-kicker">南开大学知识库已连接</text>
+        <text class="empty-title">你好，我是南开大学 AI 辅导员</text>
+        <view style="height: 12rpx" />
+        <text class="empty-desc">校务流程、学习生活、校园资源都可以直接问我；需要发帖、组队或交易时，我会先生成可编辑草稿卡片，再由你填写、确认或取消。</text>
+        <view class="knowledge-panel">
+          <text class="knowledge-title">先从南开校园问题开始</text>
+          <view class="knowledge-examples">
+            <button v-for="item in knowledgeReplies" :key="item" class="knowledge-example" @tap="handleQuickReply(item)">{{ item }}</button>
+          </view>
+        </view>
+        <view class="knowledge-panel card-panel">
+          <text class="knowledge-title">草稿卡片与确认发布</text>
+          <text class="card-panel-desc">AI 会收集必要信息并生成卡片。你可以补齐字段，选择“仅填充”继续修改，或在确认弹窗中执行发布。</text>
+          <view class="knowledge-examples">
+            <button v-for="item in cardReplies" :key="item" class="knowledge-example" @tap="handleQuickReply(item)">{{ item }}</button>
           </view>
         </view>
       </view>
@@ -54,6 +57,13 @@
           @suggest="handleQuickReply"
           @custom="handleCustomField"
         />
+        <view
+          v-if="message.role === 'assistant' && message.presentation?.type === 'draft' && message.body"
+          class="message-content message-followup"
+        >
+          <text class="message-text">{{ message.body }}</text>
+          <text class="message-time">{{ formatTime(message.created_at) }}</text>
+        </view>
         <view v-else class="message-content">
           <text class="message-text">{{ message.body }}</text>
           <text class="message-time">{{ formatTime(message.created_at) }}</text>
@@ -75,6 +85,8 @@
           :action="action"
           :busy="actionBusyId === action.id"
           @fill="handleFillAction"
+          @execute="handleExecuteAction"
+          @cancel="handleCancelAction"
           @revise="handleReviseAction"
           @recommend="handleRecommendationAction"
         />
@@ -114,7 +126,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import AssistantActionCard from '../../components/assistant/AssistantActionCard.vue'
 import AssistantPresentationCard from '../../components/assistant/AssistantPresentationCard.vue'
 import type { AssistantActionProposal, AssistantMessage } from '../../types/api'
-import { createAssistantSession, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
+import { createAssistantSession, dismissAssistantAction, executeAssistantAction, fetchAssistantActions, fetchAssistantMessages, fetchAssistantSessions, sendAssistantMessage } from '../../services/assistant'
 import { sendDatingSignal } from '../../services/dating'
 import { favoriteTradePost } from '../../services/trade'
 import { ensureAuthenticated } from '../../utils/auth'
@@ -134,7 +146,15 @@ const lastLocalMutationAt = ref(0)
 const recoveryTimers = ref<ReturnType<typeof setTimeout>[]>([])
 const ASSISTANT_UI_DEBUG = false
 
-const quickReplies = ['帮我写一条校园帖子', '帮我整理闲置发布', '推荐适合我的组队', '帮我写一句自然的开场白']
+const knowledgeReplies = [
+  '我是南开大学新生，想了解选课、成绩和转专业的常见流程',
+  '南开大学有哪些图书馆、体育场馆和校园服务资源？',
+  '我想参加竞赛或科研，应该从哪些校内资源开始了解？',
+]
+const cardReplies = [
+  '请介绍如何使用 AI 草稿卡片、仅填充、确认发布和取消',
+  '我想体验比赛组队招募的草稿卡片填写流程',
+]
 
 const canSend = computed(() => inputText.value.trim().length > 0 && !loading.value)
 
@@ -402,6 +422,19 @@ function handleReviseAction() {
   inputText.value = '我想修改这版草稿：'
 }
 
+async function handleCancelAction(action: AssistantActionProposal) {
+  actionBusyId.value = action.id
+  try {
+    const response = await dismissAssistantAction(action.id)
+    actions.value = actions.value.filter((item) => item.id !== response.action.id)
+    showToast('已取消')
+  } catch (error) {
+    showToast(error instanceof Error ? error.message : '取消失败')
+  } finally {
+    actionBusyId.value = ''
+  }
+}
+
 function handleGenerateOnly(action: AssistantActionProposal) {
   actions.value = actions.value.filter((item) => item.id !== action.id)
 }
@@ -575,6 +608,73 @@ function formatTime(value: string) {
 .empty-desc {
   font-size: 28rpx;
   color: #6f675d;
+  text-align: center;
+  line-height: 1.65;
+}
+
+.empty-kicker {
+  color: #c15f3c;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.empty-kicker {
+  margin-bottom: 12rpx;
+}
+
+.knowledge-panel {
+  width: 100%;
+  margin-top: 28rpx;
+  padding: 22rpx;
+  box-sizing: border-box;
+  border-left: 6rpx solid #c15f3c;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.card-panel {
+  margin-top: 16rpx;
+  border-left-color: #8b654f;
+}
+
+.card-panel-desc {
+  display: block;
+  margin-top: 10rpx;
+  color: #6f675d;
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
+.knowledge-title {
+  display: block;
+  color: #2f2a24;
+  font-size: 26rpx;
+  font-weight: 650;
+}
+
+.knowledge-examples {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12rpx;
+  margin-top: 16rpx;
+}
+
+.knowledge-example {
+  width: 100%;
+  min-height: 58rpx;
+  padding: 12rpx 16rpx;
+  box-sizing: border-box;
+  border: 1rpx solid rgba(16, 33, 51, 0.1);
+  border-radius: 8rpx;
+  background: #fff;
+  color: #475569;
+  font-size: 23rpx;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.knowledge-example::after {
+  border: 0;
 }
 
 .quick-replies {

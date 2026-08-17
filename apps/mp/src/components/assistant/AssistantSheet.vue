@@ -68,6 +68,11 @@
                 @suggest="handleSuggestion"
                 @custom="handleCustomField"
               />
+              <AssistantMarkdown
+                v-if="message.role === 'assistant' && message.presentation?.type === 'draft' && message.body"
+                class="assistant-followup"
+                :content="message.body"
+              />
               <text v-else-if="message.role === 'user'" class="assistant-copy">{{ message.body }}</text>
               <AssistantMarkdown v-else :content="message.body" />
             </view>
@@ -111,7 +116,16 @@
           </view>
 
           <view v-else class="assistant-empty inline-empty">
-            <text class="section-desc">直接输入你现在想解决的事情，我会帮你一起梳理。</text>
+            <text class="knowledge-kicker">南开大学知识库已连接</text>
+            <text class="section-desc">可以直接问我南开校务、学习生活和校园资源；我也能结合当前页面帮你完成校园操作。</text>
+            <view class="knowledge-suggestions">
+              <button v-for="item in knowledgeSuggestions" :key="item" class="knowledge-suggestion" @tap="handleSuggestion(item)">{{ item }}</button>
+            </view>
+            <text class="card-kicker">草稿卡片与确认发布</text>
+            <text class="section-desc">涉及发布或发送时，我会先生成可编辑卡片；你可以补齐字段、仅填充到页面，或在确认弹窗中执行。</text>
+            <view class="knowledge-suggestions">
+              <button v-for="item in cardSuggestions" :key="item" class="knowledge-suggestion card-suggestion" @tap="handleSuggestion(item)">{{ item }}</button>
+            </view>
             <view class="context-suggestions">
               <button v-for="item in contextSuggestions" :key="item" class="context-suggestion" @tap="handleSuggestion(item)">{{ item }}</button>
             </view>
@@ -260,8 +274,16 @@ const contextSuggestions = computed(() => {
   if (props.contextPath.includes('/teammates/')) return ['帮我写组队招募', '推荐适合我的组队', '帮我写申请留言']
   if (props.contextPath.includes('/dating/')) return ['帮我整理展示资料', '看看匹配偏好还缺什么', '帮我写开场白']
   if (props.pageType === 'messages') return ['帮我把回复写自然一点', '帮我整理沟通重点']
-  return ['帮我写一条校园帖子', '帮我润色当前内容', '告诉我这个页面怎么用']
+  return []
 })
+const knowledgeSuggestions = [
+  '南开大学有哪些常用校园服务和办事资源？',
+  '我想了解选课、竞赛和科研的校内信息',
+]
+const cardSuggestions = [
+  '请介绍如何使用 AI 草稿卡片、仅填充、确认发布和取消',
+  '我想体验比赛组队招募的草稿卡片填写流程',
+]
 
 function assistantUiDebug(event: string, payload: Record<string, unknown> = {}) {
   if (!ASSISTANT_UI_DEBUG) {
@@ -1090,6 +1112,11 @@ function goLogin() {
   box-shadow: none;
 }
 
+.assistant-followup {
+  display: block;
+  margin-top: 16rpx;
+}
+
 .assistant-message-head {
   display: flex;
   align-items: center;
@@ -1226,6 +1253,52 @@ function goLogin() {
 
 .inline-empty {
   padding: 24rpx 12rpx;
+}
+
+.knowledge-kicker {
+  display: block;
+  color: t.$color-brand;
+  font-size: 22rpx;
+  font-weight: 700;
+  margin-bottom: 10rpx;
+}
+
+.card-kicker {
+  display: block;
+  margin: 24rpx 0 10rpx;
+  color: t.$color-ai;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.knowledge-suggestions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.knowledge-suggestion {
+  width: 100%;
+  min-height: 58rpx;
+  padding: 10rpx 16rpx;
+  border: 1rpx solid rgba(16, 33, 51, 0.12);
+  border-left: 5rpx solid t.$color-brand;
+  border-radius: 8rpx;
+  background: rgba(255, 255, 255, 0.86);
+  color: t.$color-ink;
+  font-size: 23rpx;
+  line-height: 1.45;
+  text-align: left;
+}
+
+.knowledge-suggestion::after {
+  border: 0;
+}
+
+.card-suggestion {
+  border-left-color: t.$color-ai;
 }
 
 .context-suggestions {
