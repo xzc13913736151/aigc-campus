@@ -2906,7 +2906,7 @@ def plan_assistant_turn(user, session, prompt: str, history) -> tuple[str, list[
         if _has_confirmable_draft(current_state, _text(current_state.get("intent"))):
             return _plan_assistant_turn_fallback(user, session, prompt, history)
         return (
-            "我已修改完毕。您回复“确认”就可以发送，或者提出其他修改意见。",
+            "AI 服务暂时无法完成意图判断。为避免误发帖子或执行错误操作，我没有执行任何业务动作，请稍后重试。",
             [],
             current_state,
         )
